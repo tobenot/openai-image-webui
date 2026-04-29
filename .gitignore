@@ -1,5 +1,6 @@
 .codebuddy
 tools/notify-done
+!.codebuddy/memory
 
 # Logs
 logs
