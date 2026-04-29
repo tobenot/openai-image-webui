@@ -1,3 +1,6 @@
+import { useEffect, useId, useRef, useState } from "react";
+import { fetchModels, type ModelInfo } from "../api/openaiModels";
+import { toFriendlyError } from "../lib/errors";
 import type { AppSettings, ImageResponseFormat } from "../types";
 import { Notice } from "./Notice";
 
@@ -17,10 +20,19 @@ const PROVIDER_PRESETS: Array<{
   },
   {
     name: "LaoZhang API",
-    description: "OpenAI-compatible relay",
+    description: "OpenAI-compatible relay (global)",
     settings: {
       baseUrl: "https://api.laozhang.ai/v1",
-      model: "gpt-4o-image",
+      model: "gpt-image-1",
+      responseFormat: "url",
+    },
+  },
+  {
+    name: "LaoZhang VIP",
+    description: "Backup endpoint for overseas servers",
+    settings: {
+      baseUrl: "https://api-vip.laozhang.ai/v1",
+      model: "gpt-image-1",
       responseFormat: "url",
     },
   },
@@ -32,7 +44,67 @@ interface SettingsPanelProps {
   onReset: () => void;
 }
 
+interface ModelsState {
+  status: "idle" | "loading" | "success" | "error";
+  list: ModelInfo[];
+  error: string;
+}
+
+const INITIAL_MODELS_STATE: ModelsState = {
+  status: "idle",
+  list: [],
+  error: "",
+};
+
 export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProps) {
+  const datalistId = useId();
+  const [modelsState, setModelsState] = useState<ModelsState>(INITIAL_MODELS_STATE);
+  const abortRef = useRef<AbortController | null>(null);
+  const lastFetchedKeyRef = useRef<string>("");
+
+  // Reset the model suggestions whenever the credential pair changes,
+  // so the user does not see stale results from a different provider.
+  useEffect(() => {
+    const currentKey = `${settings.baseUrl.trim()}::${settings.apiKey.trim()}`;
+    if (lastFetchedKeyRef.current && lastFetchedKeyRef.current !== currentKey) {
+      setModelsState(INITIAL_MODELS_STATE);
+      lastFetchedKeyRef.current = "";
+    }
+  }, [settings.apiKey, settings.baseUrl]);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  async function handleFetchModels() {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setModelsState({ status: "loading", list: [], error: "" });
+
+    try {
+      const list = await fetchModels({
+        apiKey: settings.apiKey,
+        baseUrl: settings.baseUrl,
+        signal: controller.signal,
+      });
+      lastFetchedKeyRef.current = `${settings.baseUrl.trim()}::${settings.apiKey.trim()}`;
+      setModelsState({ status: "success", list, error: "" });
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setModelsState({
+        status: "error",
+        list: [],
+        error: toFriendlyError(error),
+      });
+    }
+  }
+
+  const imageModels = modelsState.list.filter((item) => item.isImageModel);
+  const otherModels = modelsState.list.filter((item) => !item.isImageModel);
 
   return (
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
@@ -74,7 +146,6 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-slate-700">API Base URL</span>
           <input
-
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             placeholder="https://api.openai.com/v1"
             value={settings.baseUrl}
@@ -94,18 +165,51 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
           />
         </label>
 
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-slate-700">Model</span>
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="text-sm font-medium text-slate-700">Model</span>
+            <button
+              type="button"
+              className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={handleFetchModels}
+              disabled={modelsState.status === "loading"}
+            >
+              {modelsState.status === "loading" ? "Fetching…" : "Fetch models"}
+            </button>
+          </div>
           <input
+            list={datalistId}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             placeholder="gpt-image-1 or gpt-4o-image"
             value={settings.model}
             onChange={(event) => onChange({ model: event.target.value })}
           />
-          <p className="mt-1.5 text-xs text-slate-500">
-            For relay providers, use the latest model name shown in that provider's dashboard.
-          </p>
-        </label>
+          <datalist id={datalistId}>
+            {imageModels.map((item) => (
+              <option key={`img-${item.id}`} value={item.id}>
+                image
+              </option>
+            ))}
+            {otherModels.map((item) => (
+              <option key={`other-${item.id}`} value={item.id}>
+                {item.ownedBy ?? ""}
+              </option>
+            ))}
+          </datalist>
+          {modelsState.status === "success" && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              Loaded {modelsState.list.length} models ({imageModels.length} image-related). You can still type any name manually.
+            </p>
+          )}
+          {modelsState.status === "error" && (
+            <p className="mt-1.5 text-xs text-rose-600">{modelsState.error}</p>
+          )}
+          {modelsState.status === "idle" && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              For relay providers, click Fetch models to load the live list, or just type any model name.
+            </p>
+          )}
+        </div>
 
 
         <label className="block">

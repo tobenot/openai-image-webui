@@ -11,7 +11,7 @@ Bring your own API key and endpoint.
 - Bring your own API key
 - Bring your own API endpoint
 - Compatible with OpenAI Images API
-- Supports custom model names
+- Supports custom model names, with on-demand model list fetching from `GET /v1/models`
 - Supports parallel image generation tasks
 - Supports URL and base64 image responses
 - Supports image preview, download, and copy
@@ -55,9 +55,12 @@ The app includes quick presets for common OpenAI-compatible Images API providers
 | Provider | Base URL | Default model |
 | --- | --- | --- |
 | OpenAI | `https://api.openai.com/v1` | `gpt-image-1` |
-| LaoZhang API | `https://api.laozhang.ai/v1` | `gpt-4o-image` |
+| LaoZhang API | `https://api.laozhang.ai/v1` | `gpt-image-1` |
+| LaoZhang VIP | `https://api-vip.laozhang.ai/v1` | `gpt-image-1` |
 
-Presets only fill the base URL, default model, and response format. You still need to bring your own API key, and relay providers may change model names over time, so check the provider dashboard for the latest supported model list.
+Presets only fill the base URL, default model, and response format. You still need to bring your own API key. Any OpenAI-compatible relay (LaoZhang is just one example) works the same way — point the base URL at it and go. Use the **Fetch models** button next to the Model field to load the live model list from whichever endpoint you configured.
+
+For a full list of OpenAI Images API parameters that can be used with this app (including ones not exposed in the UI, passed via the Advanced JSON field), see [`docs/api-features.md`](./docs/api-features.md).
 
 ## Why direct fetch instead of the OpenAI SDK?
 
