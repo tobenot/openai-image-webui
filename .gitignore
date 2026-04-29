@@ -1,3 +1,6 @@
+.codebuddy
+tools/notify-done
+
 # Logs
 logs
 *.log
