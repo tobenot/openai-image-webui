@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { fetchModels, type ModelInfo } from "../api/openaiModels";
+import { fetchModels, type ModelCapability, type ModelInfo } from "../api/openaiModels";
 import { toFriendlyError } from "../lib/errors";
 import type { AppSettings, ImageResponseFormat } from "../types";
 import { Notice } from "./Notice";
@@ -56,9 +56,22 @@ const INITIAL_MODELS_STATE: ModelsState = {
   error: "",
 };
 
+type ModelFilter = "all" | "image" | ModelCapability;
+
+const MODEL_FILTER_OPTIONS: Array<{ value: ModelFilter; label: string }> = [
+  { value: "image", label: "Image models" },
+  { value: "image-generation", label: "Image generation" },
+  { value: "image-editing", label: "Image editing" },
+  { value: "image-related", label: "Image-related" },
+  { value: "video", label: "Video" },
+  { value: "other", label: "Other" },
+  { value: "all", label: "All models" },
+];
+
 export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProps) {
   const datalistId = useId();
   const [modelsState, setModelsState] = useState<ModelsState>(INITIAL_MODELS_STATE);
+  const [modelFilter, setModelFilter] = useState<ModelFilter>("image");
   const abortRef = useRef<AbortController | null>(null);
   const lastFetchedKeyRef = useRef<string>("");
 
@@ -104,7 +117,30 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
   }
 
   const imageModels = modelsState.list.filter((item) => item.isImageModel);
-  const otherModels = modelsState.list.filter((item) => !item.isImageModel);
+  const filteredModels = modelsState.list.filter((item) => {
+    if (modelFilter === "all") return true;
+    if (modelFilter === "image") return item.isImageModel;
+    return item.category === modelFilter;
+  });
+  const categoryCounts = MODEL_FILTER_OPTIONS.reduce<Record<ModelFilter, number>>(
+    (counts, option) => {
+      counts[option.value] = modelsState.list.filter((item) => {
+        if (option.value === "all") return true;
+        if (option.value === "image") return item.isImageModel;
+        return item.category === option.value;
+      }).length;
+      return counts;
+    },
+    {
+      all: 0,
+      image: 0,
+      "image-generation": 0,
+      "image-editing": 0,
+      "image-related": 0,
+      other: 0,
+      video: 0,
+    },
+  );
 
   return (
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
@@ -168,14 +204,29 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="text-sm font-medium text-slate-700">Model</span>
-            <button
-              type="button"
-              className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
-              onClick={handleFetchModels}
-              disabled={modelsState.status === "loading"}
-            >
-              {modelsState.status === "loading" ? "Fetching…" : "Fetch models"}
-            </button>
+            <div className="flex items-center gap-2">
+              <select
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                value={modelFilter}
+                onChange={(event) => setModelFilter(event.target.value as ModelFilter)}
+              >
+                {MODEL_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {modelsState.status === "success"
+                      ? `${option.label} (${categoryCounts[option.value]})`
+                      : option.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={handleFetchModels}
+                disabled={modelsState.status === "loading"}
+              >
+                {modelsState.status === "loading" ? "Fetching…" : "Fetch models"}
+              </button>
+            </div>
           </div>
           <input
             list={datalistId}
@@ -185,20 +236,15 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
             onChange={(event) => onChange({ model: event.target.value })}
           />
           <datalist id={datalistId}>
-            {imageModels.map((item) => (
-              <option key={`img-${item.id}`} value={item.id}>
-                image
-              </option>
-            ))}
-            {otherModels.map((item) => (
-              <option key={`other-${item.id}`} value={item.id}>
-                {item.ownedBy ?? ""}
+            {filteredModels.map((item) => (
+              <option key={`${item.category}-${item.id}`} value={item.id}>
+                {item.ownedBy ? `${item.categoryLabel} · ${item.ownedBy}` : item.categoryLabel}
               </option>
             ))}
           </datalist>
           {modelsState.status === "success" && (
             <p className="mt-1.5 text-xs text-slate-500">
-              Loaded {modelsState.list.length} models ({imageModels.length} image-related). You can still type any name manually.
+              Loaded {modelsState.list.length} models ({imageModels.length} image-related, {filteredModels.length} shown). Classification is heuristic; you can still type any name manually.
             </p>
           )}
           {modelsState.status === "error" && (

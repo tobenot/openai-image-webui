@@ -11,7 +11,7 @@ Bring your own API key and endpoint.
 - Bring your own API key
 - Bring your own API endpoint
 - Compatible with OpenAI Images API
-- Supports custom model names, with on-demand model list fetching from `GET /v1/models`
+- Supports custom model names, with on-demand model list fetching and type filtering from `GET /v1/models`
 - Supports parallel image generation tasks
 - Supports URL and base64 image responses
 - Supports image preview, download, and copy

@@ -11,13 +11,29 @@ This document lists the parameters and capabilities you can take advantage of. I
 
 ---
 
+## Model list and type filters
+
+`GET /v1/models` normally returns model IDs, not a reliable capability manifest. Official OpenAI accounts may only expose a small set of true Images API models, while OpenAI-compatible relays can expose many more image providers behind the same `/v1` shape.
+
+Because the response is usually just IDs, this app uses a conservative name-based classifier for the model suggestions:
+
+- **Image generation**: `gpt-image`, `dall-e`, `flux`, `sora-image`, `gemini-flash-image`, `nano-banana`, `seedream`, `imagen`, `midjourney`, `stable-diffusion` / `sd3`, etc.
+- **Image editing**: names containing `edit`, `inpaint`, `outpaint`, `variation`, `controlnet`, `seededit`, etc.
+- **Image-related**: broader names containing `image`, `img`, `photo`, `picture`, `vision`, or `visual`.
+- **Video**: `sora`, `video`, `kling`, `runway`, `pika`, `luma`, etc.
+- **Other**: everything else.
+
+The filter is only for convenience. It does not guarantee that a model works with `POST /images/generations`; the upstream endpoint is still the source of truth. If a model is misclassified or missing from a category, type it manually.
+
+---
+
 ## Already exposed in the UI
 
 | UI field            | Request field     | Notes                                                                 |
 | ------------------- | ----------------- | --------------------------------------------------------------------- |
 | Base URL            | (endpoint prefix) | Any OpenAI-compatible `/v1` base.                                     |
 | API Key             | `Authorization`   | Sent as `Bearer <key>`.                                               |
-| Model               | `model`           | Free text. **Fetch models** button populates suggestions from `GET /v1/models`. |
+| Model               | `model`           | Free text. **Fetch models** loads `GET /v1/models` suggestions and lets you filter them by inferred type. |
 | Prompt              | `prompt`          | Required.                                                             |
 | Size                | `size`            | E.g. `1024x1024`, `1792x1024`, `1024x1792`.                           |
 | Response format     | `response_format` | `url` or `b64_json`.                                                   |

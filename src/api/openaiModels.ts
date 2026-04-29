@@ -1,20 +1,68 @@
 // Fetches the OpenAI-compatible model list from `{baseUrl}/models`.
 // Used by SettingsPanel to populate the Model dropdown on demand.
 
-const IMAGE_MODEL_KEYWORDS = [
-  "image",
-  "dall-e",
-  "dalle",
-  "flux",
-  "stable-diffusion",
-  "sd3",
-  "midjourney",
-  "imagen",
-  "kontext",
+export type ModelCapability =
+  | "image-generation"
+  | "image-editing"
+  | "image-related"
+  | "video"
+  | "other";
+
+interface ModelCapabilityRule {
+  category: ModelCapability;
+  label: string;
+  keywords: string[];
+}
+
+const MODEL_CAPABILITY_RULES: ModelCapabilityRule[] = [
+  {
+    category: "image-editing",
+    label: "Image editing",
+    keywords: ["edit", "editing", "inpaint", "outpaint", "variation", "controlnet", "seededit"],
+  },
+  {
+    category: "image-generation",
+    label: "Image generation",
+    keywords: [
+      "gpt-image",
+      "dall-e",
+      "dalle",
+      "flux",
+      "stable-diffusion",
+      "sd3",
+      "midjourney",
+      "imagen",
+      "kontext",
+      "sora-image",
+      "sora_image",
+      "gemini-flash-image",
+      "gemini_flash_image",
+      "nano-banana",
+      "nanobanana",
+      "seedream",
+      "ideogram",
+      "recraft",
+      "leonardo",
+    ],
+  },
+  {
+    category: "image-related",
+    label: "Image-related",
+    keywords: ["image", "img", "photo", "picture", "vision", "visual"],
+  },
+  {
+    category: "video",
+    label: "Video",
+    keywords: ["sora", "video", "kling", "runway", "pika", "luma"],
+  },
 ];
+
+const OTHER_MODEL_LABEL = "Other";
 
 export interface ModelInfo {
   id: string;
+  category: ModelCapability;
+  categoryLabel: string;
   isImageModel: boolean;
   ownedBy?: string;
 }
@@ -29,9 +77,25 @@ interface ModelListResponse {
   data?: Array<{ id?: string; owned_by?: string }>;
 }
 
-function classifyImageModel(id: string): boolean {
+function classifyModel(id: string): Pick<ModelInfo, "category" | "categoryLabel" | "isImageModel"> {
   const lower = id.toLowerCase();
-  return IMAGE_MODEL_KEYWORDS.some((keyword) => lower.includes(keyword));
+  const rule = MODEL_CAPABILITY_RULES.find((item) =>
+    item.keywords.some((keyword) => lower.includes(keyword)),
+  );
+
+  if (!rule) {
+    return {
+      category: "other",
+      categoryLabel: OTHER_MODEL_LABEL,
+      isImageModel: false,
+    };
+  }
+
+  return {
+    category: rule.category,
+    categoryLabel: rule.label,
+    isImageModel: rule.category.startsWith("image-"),
+  };
 }
 
 export async function fetchModels(params: FetchModelsParams): Promise<ModelInfo[]> {
@@ -62,22 +126,25 @@ export async function fetchModels(params: FetchModelsParams): Promise<ModelInfo[
   const json = (await res.json()) as ModelListResponse;
   const data = Array.isArray(json.data) ? json.data : [];
 
-  const models: ModelInfo[] = data
-    .map((item) => {
-      const id = typeof item.id === "string" ? item.id.trim() : "";
-      if (!id) return null;
-      return {
-        id,
-        ownedBy: typeof item.owned_by === "string" ? item.owned_by : undefined,
-        isImageModel: classifyImageModel(id),
-      } satisfies ModelInfo;
-    })
-    .filter((item): item is ModelInfo => item !== null);
+  const models = data.reduce<ModelInfo[]>((result, item) => {
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    if (!id) return result;
 
-  // Image models first, then alphabetical within each group.
+    result.push({
+      id,
+      ...(typeof item.owned_by === "string" ? { ownedBy: item.owned_by } : {}),
+      ...classifyModel(id),
+    });
+    return result;
+  }, []);
+
+  // Image models first, then category, then alphabetical within each group.
   models.sort((a, b) => {
     if (a.isImageModel !== b.isImageModel) {
       return a.isImageModel ? -1 : 1;
+    }
+    if (a.category !== b.category) {
+      return a.category.localeCompare(b.category);
     }
     return a.id.localeCompare(b.id);
   });
