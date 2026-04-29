@@ -41,14 +41,30 @@ npm run deploy
 ## Usage
 
 1. Open the app.
-2. Enter your API Base URL.
+2. Choose a provider preset, or enter your API Base URL manually.
 3. Enter your API Key.
 4. Enter the model name.
 5. Write a prompt.
 6. Choose image count, size, response format, and concurrency.
 7. Click Generate.
 
+## Provider Presets
+
+The app includes quick presets for common OpenAI-compatible Images API providers:
+
+| Provider | Base URL | Default model |
+| --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1` | `gpt-image-1` |
+| LaoZhang API | `https://api.laozhang.ai/v1` | `gpt-4o-image` |
+
+Presets only fill the base URL, default model, and response format. You still need to bring your own API key, and relay providers may change model names over time, so check the provider dashboard for the latest supported model list.
+
+## Why direct fetch instead of the OpenAI SDK?
+
+The official OpenAI JavaScript SDK can target browsers only when `dangerouslyAllowBrowser: true` is set, because browser-side usage can expose API credentials. This project is already a pure frontend BYOK tool, so it uses a small direct `fetch` wrapper against the OpenAI-compatible REST endpoint. That keeps the bundle smaller, avoids SDK-specific browser warnings, and works with custom base URLs such as relay providers.
+
 ## API Format
+
 
 This app calls:
 
