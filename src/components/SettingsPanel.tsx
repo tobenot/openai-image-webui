@@ -57,25 +57,19 @@ const INITIAL_MODELS_STATE: ModelsState = {
   error: "",
 };
 
-type ModelFilter = "all" | "image" | ModelCapability;
+type ModelFilter = "all" | ModelCapability;
 
 const MODEL_FILTER_OPTIONS: Array<{ value: ModelFilter; labelKey: string }> = [
   { value: "image", labelKey: "settings.models.filters.image" },
-  { value: "image-generation", labelKey: "settings.models.filters.image-generation" },
-  { value: "image-editing", labelKey: "settings.models.filters.image-editing" },
-  { value: "image-related", labelKey: "settings.models.filters.image-related" },
-  { value: "video", labelKey: "settings.models.filters.video" },
-  { value: "other", labelKey: "settings.models.filters.other" },
+  { value: "non-image", labelKey: "settings.models.filters.non-image" },
   { value: "all", labelKey: "settings.models.filters.all" },
 ];
 
 const MODEL_CATEGORY_LABEL_KEYS: Record<ModelCapability, string> = {
-  "image-generation": "settings.models.filters.image-generation",
-  "image-editing": "settings.models.filters.image-editing",
-  "image-related": "settings.models.filters.image-related",
-  video: "settings.models.filters.video",
-  other: "settings.models.filters.other",
+  image: "settings.models.filters.image",
+  "non-image": "settings.models.filters.non-image",
 };
+
 
 export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProps) {
   const { t } = useTranslation();
@@ -142,14 +136,12 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
   const imageModels = modelsState.list.filter((item) => item.isImageModel);
   const filteredModels = modelsState.list.filter((item) => {
     if (modelFilter === "all") return true;
-    if (modelFilter === "image") return item.isImageModel;
     return item.category === modelFilter;
   });
   const categoryCounts = MODEL_FILTER_OPTIONS.reduce<Record<ModelFilter, number>>(
     (counts, option) => {
       counts[option.value] = modelsState.list.filter((item) => {
         if (option.value === "all") return true;
-        if (option.value === "image") return item.isImageModel;
         return item.category === option.value;
       }).length;
       return counts;
@@ -157,13 +149,10 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
     {
       all: 0,
       image: 0,
-      "image-generation": 0,
-      "image-editing": 0,
-      "image-related": 0,
-      other: 0,
-      video: 0,
+      "non-image": 0,
     },
   );
+
 
   return (
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
