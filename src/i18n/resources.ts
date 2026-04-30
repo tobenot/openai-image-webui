@@ -71,10 +71,29 @@ export const resources = {
         prompt: "Prompt",
         promptPlaceholder: "A cute cat wearing sunglasses, cinematic lighting",
         imageCount: "Image Count",
-        size: "Size",
+        size: "Size (width x height)",
+        sizePlaceholder: "For example: 1024x1536",
+        quickSizePreset: "Quick size presets (ratio + quality)",
+        ratioSlider: "Custom ratio sliders",
+        widthRatio: "Width ratio",
+        heightRatio: "Height ratio",
+        currentRatio: "Current ratio: {{ratio}}",
+        commonSizes: "Common sizes",
+
+        commonSizesHint: "Ordered as portrait → square → landscape.",
+        recentSizes: "Recent sizes",
+        recentSizesEmpty: "No recent sizes yet. Pick a preset or enter one manually.",
+        recommendedSize: "Suggested size: {{size}}",
+
+        quality: {
+          "1k": "1K",
+          "2k": "2K",
+          "4k": "4K",
+        },
         advancedJsonParams: "Advanced JSON Params",
         generate: "Generate",
       },
+
       tasks: {
         title: "Tasks",
         stats:
@@ -204,10 +223,24 @@ export const resources = {
         prompt: "提示词",
         promptPlaceholder: "一只戴墨镜的可爱猫，电影感光照",
         imageCount: "图片数量",
-        size: "尺寸",
+        size: "尺寸（宽 x 高）",
+        sizePlaceholder: "例如：1024x1536",
+        quickSizePreset: "快捷尺寸（比例 + 清晰度）",
+        commonSizes: "常用分辨率",
+        commonSizesHint: "已按竖图 → 方图 → 横图排序。",
+        recentSizes: "最近使用",
+
+        recentSizesEmpty: "还没有最近使用的尺寸。你可以先点一个预设，或手动输入。",
+        recommendedSize: "建议尺寸：{{size}}",
+        quality: {
+          "1k": "1K",
+          "2k": "2K",
+          "4k": "4K",
+        },
         advancedJsonParams: "高级 JSON 参数",
         generate: "生成",
       },
+
       tasks: {
         title: "任务",
         stats: "待处理 {{pending}} · 运行中 {{running}} · 成功 {{success}} · 失败 {{error}}",
