@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { GenerationPanel } from "./components/GenerationPanel";
 import { Header } from "./components/Header";
+import { ImageLibrary } from "./components/ImageLibrary";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { Notice } from "./components/Notice";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TaskQueue } from "./components/TaskQueue";
+
 import { useImageTasks } from "./hooks/useImageTasks";
 import { useSettings } from "./hooks/useSettings";
 import { toFriendlyError } from "./lib/errors";
@@ -49,12 +51,16 @@ function normalizeForm(form: GenerateFormState): GenerateFormState {
   };
 }
 
+type WorkspacePanel = "tasks" | "library";
+
 export default function App() {
   const { i18n, t } = useTranslation();
   const { settings, setSettings, resetSettings } = useSettings();
   const [form, setForm] = useState<GenerateFormState>(DEFAULT_FORM);
   const [formError, setFormError] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [activePanel, setActivePanel] = useState<WorkspacePanel>("tasks");
+
   const {
     tasks,
     cacheStats,
@@ -99,7 +105,9 @@ export default function App() {
         mustBeObject: t("errors.advancedJsonObject"),
       });
       addTasks(normalizedForm, extraParams);
+      setActivePanel("tasks");
       setForm((current) => ({ ...current, count: normalizedForm.count, size: normalizedForm.size }));
+
     } catch (error) {
       setFormError(
         toFriendlyError(error, {
@@ -123,16 +131,43 @@ export default function App() {
 
           <div className="space-y-6">
             <GenerationPanel form={form} error={formError} onChange={updateForm} onSubmit={handleGenerate} />
-            <TaskQueue
-              tasks={tasks}
-              cacheStats={cacheStats}
-              onPreview={setPreviewUrl}
-              onRetry={retryTask}
-              onCancel={cancelTask}
-              onRemove={removeTask}
-              onClearTaskImage={clearTaskImage}
-              onClearImageCache={clearCachedImages}
-            />
+            <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
+              <div className="grid grid-cols-2 gap-1">
+                {(["tasks", "library"] as const).map((panel) => (
+                  <button
+                    key={panel}
+                    type="button"
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                      activePanel === panel
+                        ? "bg-slate-950 text-white shadow-sm"
+                        : "text-slate-500 hover:bg-white hover:text-slate-900"
+                    }`}
+                    onClick={() => setActivePanel(panel)}
+                  >
+                    {t(`workspace.tabs.${panel}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {activePanel === "tasks" ? (
+              <TaskQueue
+                tasks={tasks}
+                onPreview={setPreviewUrl}
+                onRetry={retryTask}
+                onCancel={cancelTask}
+                onRemove={removeTask}
+                onClearTaskImage={clearTaskImage}
+              />
+            ) : (
+              <ImageLibrary
+                stats={cacheStats}
+                onPreview={setPreviewUrl}
+                onDeleteImage={clearTaskImage}
+                onClearImageCache={clearCachedImages}
+              />
+            )}
+
 
           </div>
         </main>

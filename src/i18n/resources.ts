@@ -96,12 +96,39 @@ export const resources = {
         generate: "Generate",
       },
 
+      workspace: {
+        tabs: {
+          tasks: "Tasks",
+          library: "Image Library",
+        },
+      },
+      library: {
+        title: "Image Library",
+        subtitle: "Browse generated images from browser storage without stretching the task queue.",
+        loading: "Loading...",
+        empty: "No cached images yet. Generated images will appear here after caching.",
+        loadMore: "Load more",
+        previewImage: "Preview image",
+        unknownPrompt: "Untitled image",
+        unknownModel: "Unknown model",
+        deleteConfirm: "Delete this cached image? This will remove it from the image library.",
+        messages: {
+          promptCopied: "Prompt copied.",
+          downloadStarted: "Download started.",
+          imageDeleted: "Cached image deleted.",
+          cacheCleared: "Image cache cleared.",
+          loadFailed: "Failed to load image library.",
+        },
+      },
       tasks: {
         title: "Tasks",
+
         stats:
           "Pending {{pending}} · Running {{running}} · Success {{success}} · Failed {{error}}",
         total: "{{count}} total",
+        showingRecent: "Showing the latest {{shown}} tasks. {{hidden}} older tasks are hidden; generated images stay in the Image Library.",
         empty: "No tasks yet. Enter a prompt and generate your first image.",
+
         elapsed: "Elapsed: {{value}}",
         generating: "Generating...",
         noImageYet: "No image yet",
@@ -257,11 +284,38 @@ export const resources = {
         generate: "生成",
       },
 
+      workspace: {
+        tabs: {
+          tasks: "任务",
+          library: "图片库",
+        },
+      },
+      library: {
+        title: "图片库",
+        subtitle: "从浏览器本地存储浏览历史生成图，不再把任务队列无限拉长。",
+        loading: "加载中...",
+        empty: "还没有缓存图片。生成成功并缓存后会显示在这里。",
+        loadMore: "加载更多",
+        previewImage: "预览图片",
+        unknownPrompt: "未命名图片",
+        unknownModel: "未知模型",
+        deleteConfirm: "确定删除这张缓存图片吗？它会从图片库中移除。",
+        messages: {
+          promptCopied: "提示词已复制。",
+          downloadStarted: "已开始下载。",
+          imageDeleted: "缓存图片已删除。",
+          cacheCleared: "图片缓存已清空。",
+          loadFailed: "图片库加载失败。",
+        },
+      },
       tasks: {
         title: "任务",
+
         stats: "待处理 {{pending}} · 运行中 {{running}} · 成功 {{success}} · 失败 {{error}}",
         total: "共 {{count}} 个",
+        showingRecent: "当前只显示最近 {{shown}} 个任务，已隐藏 {{hidden}} 个更早任务；生成图片仍保留在图片库。",
         empty: "还没有任务。输入提示词并生成第一张图片。",
+
         elapsed: "耗时：{{value}}",
         generating: "生成中...",
         noImageYet: "暂无图片",

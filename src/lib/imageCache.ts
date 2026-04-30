@@ -1,17 +1,30 @@
-import type { ImageCacheStats } from "../types";
+import type { ImageCacheStats, ImageResponseFormat } from "../types";
 
 const DB_NAME = "openai-image-webui-cache";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "images";
 
 export const IMAGE_CACHE_WARNING_BYTES = 200 * 1024 * 1024;
 
-export interface CachedImageRecord {
+export interface CachedImageMetadata {
+  prompt?: string;
+  model?: string;
+  generationSize?: string;
+  responseFormat?: ImageResponseFormat;
+  taskCreatedAt?: number;
+}
+
+export interface CachedImageRecord extends CachedImageMetadata {
   id: string;
   blob: Blob;
   mimeType: string;
   size: number;
   cachedAt: number;
+}
+
+export interface CachedImagePage {
+  images: CachedImageRecord[];
+  hasMore: boolean;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -30,9 +43,15 @@ function openDb(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = () => {
       const db = request.result;
+      let store: IDBObjectStore;
 
       if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
+        store = db.createObjectStore(STORE_NAME, { keyPath: "id" });
+      } else {
+        store = request.transaction?.objectStore(STORE_NAME) as IDBObjectStore;
+      }
+
+      if (!store.indexNames.contains("cachedAt")) {
         store.createIndex("cachedAt", "cachedAt");
       }
     };
@@ -101,13 +120,17 @@ async function imageUrlToBlob(imageUrl: string, signal?: AbortSignal) {
 export async function cacheImageFromUrl(
   id: string,
   imageUrl: string,
+  metadata: CachedImageMetadata = {},
   signal?: AbortSignal,
 ): Promise<CachedImageRecord> {
   const blob = await imageUrlToBlob(imageUrl, signal);
+  const existing = await getCachedImage(id).catch(() => null);
   const record: CachedImageRecord = {
+    ...existing,
+    ...metadata,
     id,
     blob,
-    mimeType: blob.type || "image/png",
+    mimeType: blob.type || existing?.mimeType || "image/png",
     size: blob.size,
     cachedAt: Date.now(),
   };
@@ -128,6 +151,40 @@ export function getCachedImage(id: string) {
   return runTransaction<CachedImageRecord | null>("readonly", (store, resolve, reject) => {
     const request = store.get(id);
     request.onsuccess = () => resolve((request.result as CachedImageRecord | undefined) ?? null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export function listCachedImages(offset = 0, limit = 50): Promise<CachedImagePage> {
+  return runTransaction<CachedImagePage>("readonly", (store, resolve, reject) => {
+    const index = store.index("cachedAt");
+    const request = index.openCursor(null, "prev");
+    const images: CachedImageRecord[] = [];
+    let skipped = 0;
+
+    request.onsuccess = () => {
+      const cursor = request.result;
+
+      if (!cursor) {
+        resolve({ images, hasMore: false });
+        return;
+      }
+
+      if (skipped < offset) {
+        skipped += 1;
+        cursor.continue();
+        return;
+      }
+
+      if (images.length >= limit) {
+        resolve({ images, hasMore: true });
+        return;
+      }
+
+      images.push(cursor.value as CachedImageRecord);
+      cursor.continue();
+    };
+
     request.onerror = () => reject(request.error);
   });
 }

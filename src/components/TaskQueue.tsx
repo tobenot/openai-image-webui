@@ -1,28 +1,25 @@
 import { useTranslation } from "react-i18next";
-import type { ImageCacheStats, ImageTask } from "../types";
-import { ImageCacheSummary } from "./ImageCacheSummary";
+import type { ImageTask } from "../types";
 import { TaskCard } from "./TaskCard";
+
+const MAX_RENDERED_TASKS = 100;
 
 interface TaskQueueProps {
   tasks: ImageTask[];
-  cacheStats: ImageCacheStats;
   onPreview: (imageUrl: string) => void;
   onRetry: (id: string) => void;
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
   onClearTaskImage: (id: string) => void;
-  onClearImageCache: () => void;
 }
 
 export function TaskQueue({
   tasks,
-  cacheStats,
   onPreview,
   onRetry,
   onCancel,
   onRemove,
   onClearTaskImage,
-  onClearImageCache,
 }: TaskQueueProps) {
   const { t } = useTranslation();
   const stats = {
@@ -32,6 +29,8 @@ export function TaskQueue({
     error: tasks.filter((task) => task.status === "error").length,
   };
   const orderedTasks = [...tasks].sort((a, b) => b.createdAt - a.createdAt);
+  const visibleTasks = orderedTasks.slice(0, MAX_RENDERED_TASKS);
+  const hiddenCount = Math.max(0, orderedTasks.length - visibleTasks.length);
 
   return (
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
@@ -45,17 +44,19 @@ export function TaskQueue({
         </div>
       </div>
 
-      <div className="mb-5">
-        <ImageCacheSummary stats={cacheStats} onClear={onClearImageCache} />
-      </div>
+      {hiddenCount > 0 ? (
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+          {t("tasks.showingRecent", { shown: visibleTasks.length, hidden: hiddenCount })}
+        </div>
+      ) : null}
 
-      {orderedTasks.length === 0 ? (
+      {visibleTasks.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-14 text-center text-sm text-slate-500">
           {t("tasks.empty")}
         </div>
       ) : (
         <div className="space-y-4">
-          {orderedTasks.map((task) => (
+          {visibleTasks.map((task) => (
             <TaskCard
               key={task.id}
               task={task}

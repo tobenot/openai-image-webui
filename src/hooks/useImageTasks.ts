@@ -151,7 +151,14 @@ export function useImageTasks(settings: AppSettings) {
             continue;
           }
 
-          const cached = await cacheImageFromUrl(task.id, source);
+          const cached = await cacheImageFromUrl(task.id, source, {
+            prompt: task.prompt,
+            model: task.model,
+            generationSize: task.size,
+            responseFormat: task.responseFormat,
+            taskCreatedAt: task.createdAt,
+          });
+
 
           if (active) {
             attachCachedImage(task.id, cached);
@@ -169,9 +176,21 @@ export function useImageTasks(settings: AppSettings) {
   }, [attachCachedImage, refreshCacheStats]);
 
   const cacheGeneratedImage = useCallback(
-    async (taskId: string, imageUrl: string, signal: AbortSignal) => {
+    async (task: ImageTask, imageUrl: string, signal: AbortSignal) => {
       try {
-        const cached = await cacheImageFromUrl(taskId, imageUrl, signal);
+        const cached = await cacheImageFromUrl(
+          task.id,
+          imageUrl,
+          {
+            prompt: task.prompt,
+            model: task.model,
+            generationSize: task.size,
+            responseFormat: task.responseFormat,
+            taskCreatedAt: task.createdAt,
+          },
+          signal,
+        );
+
         await refreshCacheStats();
         return {
           imageUrl: createObjectUrl(cached.blob),
@@ -234,7 +253,8 @@ export function useImageTasks(settings: AppSettings) {
             extraParams: task.extraParams,
             signal: controller.signal,
           });
-          const cachedImage = await cacheGeneratedImage(task.id, result.imageUrl, controller.signal);
+          const cachedImage = await cacheGeneratedImage(task, result.imageUrl, controller.signal);
+
 
           setTasks((current) =>
             current.map((item) =>
@@ -381,8 +401,8 @@ export function useImageTasks(settings: AppSettings) {
     controller?.abort();
     controllersRef.current.delete(id);
     revokeObjectUrl(currentTask?.imageUrl);
-    void deleteCachedImage(id).then(refreshCacheStats).catch(() => undefined);
     setTasks((current) => current.filter((task) => task.id !== id));
+
   }
 
   function clearTaskImage(id: string) {
@@ -432,9 +452,9 @@ export function useImageTasks(settings: AppSettings) {
     controllersRef.current.clear();
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrlsRef.current.clear();
-    void clearImageCache().then(refreshCacheStats).catch(() => undefined);
     setTasks([]);
   }
+
 
   return {
     tasks,
