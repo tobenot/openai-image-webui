@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { generateImage } from "../api/openaiImages";
+import { generateImage, getImageGenerationDebug } from "../api/openaiImages";
+
 import { toFriendlyError } from "../lib/errors";
 import { loadTasks, saveTasks } from "../lib/storage";
 import type { AppSettings, GenerateFormState, ImageTask } from "../types";
@@ -47,7 +48,9 @@ export function useImageTasks(settings: AppSettings) {
               startedAt,
               finishedAt: undefined,
               error: undefined,
+              debug: undefined,
             }
+
           : item,
       ),
     );
@@ -75,14 +78,17 @@ export function useImageTasks(settings: AppSettings) {
                   imageUrl: result.imageUrl,
                   b64Json: result.b64Json,
                   raw: result.raw,
+                  debug: result.debug,
                   error: undefined,
                   finishedAt: Date.now(),
+
                 }
               : item,
           ),
         );
       } catch (error) {
         const wasAborted = controller.signal.aborted;
+        const debug = wasAborted ? undefined : getImageGenerationDebug(error);
         setTasks((current) =>
           current.map((item) =>
             item.id === task.id
@@ -90,11 +96,13 @@ export function useImageTasks(settings: AppSettings) {
                   ...item,
                   status: wasAborted ? "cancelled" : "error",
                   error: wasAborted ? "tasks.messages.taskCancelled" : toFriendlyError(error),
+                  debug,
                   finishedAt: Date.now(),
                 }
               : item,
           ),
         );
+
       } finally {
         controllersRef.current.delete(task.id);
       }
@@ -154,8 +162,10 @@ export function useImageTasks(settings: AppSettings) {
               imageUrl: undefined,
               b64Json: undefined,
               raw: undefined,
+              debug: undefined,
               error: undefined,
               startedAt: undefined,
+
               finishedAt: undefined,
               createdAt: Date.now(),
             }

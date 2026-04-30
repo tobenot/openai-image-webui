@@ -22,6 +22,16 @@ export interface GenerateFormState {
   advancedJson: string;
 }
 
+export interface ImageTaskDebug {
+  endpoint: string;
+  requestBody: Record<string, unknown>;
+  responseStatus?: number;
+  responseStatusText?: string;
+  responseContentType?: string | null;
+  responseBodyText?: string;
+  parsedResponse?: unknown;
+}
+
 export interface ImageTask {
   id: string;
   prompt: string;
@@ -36,10 +46,12 @@ export interface ImageTask {
   startedAt?: number;
   finishedAt?: number;
   raw?: unknown;
+  debug?: ImageTaskDebug;
   extraParams?: Record<string, unknown>;
 }
 
 export interface GenerateImageParams {
+
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -54,4 +66,7 @@ export interface GenerateImageResult {
   imageUrl: string;
   b64Json?: string;
   raw: unknown;
+  debug: ImageTaskDebug;
 }
+
+

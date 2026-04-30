@@ -43,13 +43,32 @@ function isI18nKey(value: string) {
   return value.startsWith("tasks.messages.") || value.startsWith("errors.");
 }
 
+function formatTaskDebug(task: ImageTask, errorText: string) {
+  return JSON.stringify(
+    {
+      id: task.id,
+      status: task.status,
+      error: errorText || undefined,
+      model: task.model,
+      size: task.size,
+      responseFormat: task.responseFormat,
+      debug: task.debug,
+    },
+    null,
+    2,
+  );
+}
+
 export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskCardProps) {
+
   const { t } = useTranslation();
   const [messageKey, setMessageKey] = useState<string>("");
   const hasImage = Boolean(task.imageUrl);
+  const hasDebug = Boolean(task.debug);
   const canCancel = task.status === "pending" || task.status === "running";
 
   async function handleCopyImage() {
+
     if (!task.imageUrl) {
       return;
     }
@@ -63,7 +82,17 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
     setMessageKey("tasks.messages.promptCopied");
   }
 
+  async function handleCopyDebug() {
+    if (!hasDebug) {
+      return;
+    }
+
+    await copyText(formatTaskDebug(task, errorText));
+    setMessageKey("tasks.messages.debugCopied");
+  }
+
   async function handleDownload() {
+
     if (!task.imageUrl) {
       return;
     }
@@ -77,8 +106,10 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
       ? t(task.error)
       : task.error
     : "";
+  const debugText = hasDebug ? formatTaskDebug(task, errorText) : "";
 
   return (
+
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="grid gap-0 md:grid-cols-[220px_1fr]">
         <div className="flex min-h-52 items-center justify-center bg-slate-100">
@@ -141,7 +172,19 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
             </div>
           ) : null}
 
+          {debugText ? (
+            <details className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <summary className="cursor-pointer font-medium text-slate-700">
+                {t("tasks.debugDetails")}
+              </summary>
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono">
+                {debugText}
+              </pre>
+            </details>
+          ) : null}
+
           {messageKey ? (
+
             <div className="mb-4 text-xs text-emerald-600">{t(messageKey)}</div>
           ) : null}
 
@@ -173,7 +216,16 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
             <button type="button" className={actionButtonClass()} onClick={() => void handleCopyPrompt()}>
               {t("tasks.actions.copyPrompt")}
             </button>
+            <button
+              type="button"
+              className={actionButtonClass(!hasDebug)}
+              disabled={!hasDebug}
+              onClick={() => void handleCopyDebug()}
+            >
+              {t("tasks.actions.copyDebug")}
+            </button>
             <button type="button" className={actionButtonClass()} onClick={() => onRetry(task.id)}>
+
               {t("tasks.actions.retry")}
             </button>
             {canCancel ? (

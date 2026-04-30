@@ -85,6 +85,7 @@ export const resources = {
         generating: "Generating...",
         noImageYet: "No image yet",
         previewGeneratedImage: "Preview generated image",
+        debugDetails: "Debug details",
         fields: {
           model: "Model",
           size: "Size",
@@ -102,6 +103,7 @@ export const resources = {
           download: "Download",
           copyImageUrl: "Copy image URL",
           copyPrompt: "Copy prompt",
+          copyDebug: "Copy debug JSON",
           retry: "Retry",
           cancel: "Cancel",
           delete: "Delete",
@@ -109,6 +111,7 @@ export const resources = {
         messages: {
           imageUrlCopied: "Image URL copied.",
           promptCopied: "Prompt copied.",
+          debugCopied: "Debug JSON copied.",
           downloadStarted: "Download started.",
           taskCancelled: "Task cancelled.",
           taskInterrupted: "Task was interrupted by page reload.",
@@ -214,6 +217,7 @@ export const resources = {
         generating: "生成中...",
         noImageYet: "暂无图片",
         previewGeneratedImage: "预览生成图片",
+        debugDetails: "调试详情",
         fields: {
           model: "模型",
           size: "尺寸",
@@ -231,6 +235,7 @@ export const resources = {
           download: "下载",
           copyImageUrl: "复制图片 URL",
           copyPrompt: "复制提示词",
+          copyDebug: "复制调试 JSON",
           retry: "重试",
           cancel: "取消",
           delete: "删除",
@@ -238,6 +243,7 @@ export const resources = {
         messages: {
           imageUrlCopied: "图片 URL 已复制。",
           promptCopied: "提示词已复制。",
+          debugCopied: "调试 JSON 已复制。",
           downloadStarted: "已开始下载。",
           taskCancelled: "任务已取消。",
           taskInterrupted: "任务因页面重新加载而中断。",
