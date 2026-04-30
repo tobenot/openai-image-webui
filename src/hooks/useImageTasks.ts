@@ -89,7 +89,7 @@ export function useImageTasks(settings: AppSettings) {
               ? {
                   ...item,
                   status: wasAborted ? "cancelled" : "error",
-                  error: wasAborted ? "Task cancelled." : toFriendlyError(error),
+                  error: wasAborted ? "tasks.messages.taskCancelled" : toFriendlyError(error),
                   finishedAt: Date.now(),
                 }
               : item,
@@ -178,7 +178,7 @@ export function useImageTasks(settings: AppSettings) {
           ? {
               ...task,
               status: "cancelled",
-              error: "Task cancelled.",
+              error: "tasks.messages.taskCancelled",
               finishedAt: Date.now(),
             }
           : task,

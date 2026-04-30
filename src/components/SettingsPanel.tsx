@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { fetchModels, type ModelCapability, type ModelInfo } from "../api/openaiModels";
 import { toFriendlyError } from "../lib/errors";
 import type { AppSettings, ImageResponseFormat } from "../types";
@@ -6,12 +7,12 @@ import { Notice } from "./Notice";
 
 const PROVIDER_PRESETS: Array<{
   name: string;
-  description: string;
+  descriptionKey: string;
   settings: Pick<AppSettings, "baseUrl" | "model" | "responseFormat">;
 }> = [
   {
     name: "OpenAI",
-    description: "Official Images API",
+    descriptionKey: "settings.presets.openai.description",
     settings: {
       baseUrl: "https://api.openai.com/v1",
       model: "gpt-image-1",
@@ -20,7 +21,7 @@ const PROVIDER_PRESETS: Array<{
   },
   {
     name: "LaoZhang API",
-    description: "OpenAI-compatible relay (global)",
+    descriptionKey: "settings.presets.laozhang.description",
     settings: {
       baseUrl: "https://api.laozhang.ai/v1",
       model: "gpt-image-1",
@@ -29,7 +30,7 @@ const PROVIDER_PRESETS: Array<{
   },
   {
     name: "LaoZhang VIP",
-    description: "Backup endpoint for overseas servers",
+    descriptionKey: "settings.presets.laozhangVip.description",
     settings: {
       baseUrl: "https://api-vip.laozhang.ai/v1",
       model: "gpt-image-1",
@@ -58,17 +59,26 @@ const INITIAL_MODELS_STATE: ModelsState = {
 
 type ModelFilter = "all" | "image" | ModelCapability;
 
-const MODEL_FILTER_OPTIONS: Array<{ value: ModelFilter; label: string }> = [
-  { value: "image", label: "Image models" },
-  { value: "image-generation", label: "Image generation" },
-  { value: "image-editing", label: "Image editing" },
-  { value: "image-related", label: "Image-related" },
-  { value: "video", label: "Video" },
-  { value: "other", label: "Other" },
-  { value: "all", label: "All models" },
+const MODEL_FILTER_OPTIONS: Array<{ value: ModelFilter; labelKey: string }> = [
+  { value: "image", labelKey: "settings.models.filters.image" },
+  { value: "image-generation", labelKey: "settings.models.filters.image-generation" },
+  { value: "image-editing", labelKey: "settings.models.filters.image-editing" },
+  { value: "image-related", labelKey: "settings.models.filters.image-related" },
+  { value: "video", labelKey: "settings.models.filters.video" },
+  { value: "other", labelKey: "settings.models.filters.other" },
+  { value: "all", labelKey: "settings.models.filters.all" },
 ];
 
+const MODEL_CATEGORY_LABEL_KEYS: Record<ModelCapability, string> = {
+  "image-generation": "settings.models.filters.image-generation",
+  "image-editing": "settings.models.filters.image-editing",
+  "image-related": "settings.models.filters.image-related",
+  video: "settings.models.filters.video",
+  other: "settings.models.filters.other",
+};
+
 export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProps) {
+  const { t } = useTranslation();
   const datalistId = useId();
   const [modelsState, setModelsState] = useState<ModelsState>(INITIAL_MODELS_STATE);
   const [modelFilter, setModelFilter] = useState<ModelFilter>("image");
@@ -92,6 +102,16 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
   }, []);
 
   async function handleFetchModels() {
+    if (!settings.apiKey.trim()) {
+      setModelsState({ status: "error", list: [], error: t("errors.apiKeyRequiredToFetchModels") });
+      return;
+    }
+
+    if (!settings.baseUrl.trim()) {
+      setModelsState({ status: "error", list: [], error: t("errors.apiBaseUrlRequiredToFetchModels") });
+      return;
+    }
+
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -111,7 +131,10 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
       setModelsState({
         status: "error",
         list: [],
-        error: toFriendlyError(error),
+        error: toFriendlyError(error, {
+          unknown: t("errors.unknown"),
+          requestFailed: t("errors.requestFailed"),
+        }),
       });
     }
   }
@@ -146,21 +169,23 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-slate-950">API Settings</h2>
-          <p className="mt-1 text-sm text-slate-500">Bring your own endpoint and key.</p>
+          <h2 className="text-lg font-semibold text-slate-950">{t("settings.title")}</h2>
+          <p className="mt-1 text-sm text-slate-500">{t("settings.subtitle")}</p>
         </div>
         <button
           type="button"
           className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
           onClick={onReset}
         >
-          Reset
+          {t("settings.reset")}
         </button>
       </div>
 
       <div className="space-y-4">
         <div>
-          <span className="mb-2 block text-sm font-medium text-slate-700">Provider Presets</span>
+          <span className="mb-2 block text-sm font-medium text-slate-700">
+            {t("settings.providerPresets")}
+          </span>
           <div className="grid gap-2 sm:grid-cols-2">
             {PROVIDER_PRESETS.map((preset) => (
               <button
@@ -170,17 +195,15 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
                 onClick={() => onChange(preset.settings)}
               >
                 <span className="block text-sm font-semibold text-slate-800">{preset.name}</span>
-                <span className="mt-1 block text-xs text-slate-500">{preset.description}</span>
+                <span className="mt-1 block text-xs text-slate-500">{t(preset.descriptionKey)}</span>
               </button>
             ))}
           </div>
-          <p className="mt-2 text-xs leading-5 text-slate-500">
-            Presets only fill the base URL, model, and response format. You still need to use your own API key.
-          </p>
+          <p className="mt-2 text-xs leading-5 text-slate-500">{t("settings.presetsNote")}</p>
         </div>
 
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-slate-700">API Base URL</span>
+          <span className="mb-1.5 block text-sm font-medium text-slate-700">{t("settings.apiBaseUrl")}</span>
           <input
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             placeholder="https://api.openai.com/v1"
@@ -190,7 +213,7 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
         </label>
 
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-slate-700">API Key</span>
+          <span className="mb-1.5 block text-sm font-medium text-slate-700">{t("settings.apiKey")}</span>
           <input
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             type="password"
@@ -203,7 +226,7 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
 
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <span className="text-sm font-medium text-slate-700">Model</span>
+            <span className="text-sm font-medium text-slate-700">{t("settings.model")}</span>
             <div className="flex items-center gap-2">
               <select
                 className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-600 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
@@ -213,8 +236,8 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
                 {MODEL_FILTER_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {modelsState.status === "success"
-                      ? `${option.label} (${categoryCounts[option.value]})`
-                      : option.label}
+                      ? `${t(option.labelKey)} (${categoryCounts[option.value]})`
+                      : t(option.labelKey)}
                   </option>
                 ))}
               </select>
@@ -224,7 +247,9 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
                 onClick={handleFetchModels}
                 disabled={modelsState.status === "loading"}
               >
-                {modelsState.status === "loading" ? "Fetching…" : "Fetch models"}
+                {modelsState.status === "loading"
+                  ? t("settings.models.fetching")
+                  : t("settings.models.fetchModels")}
               </button>
             </div>
           </div>
@@ -236,30 +261,41 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
             onChange={(event) => onChange({ model: event.target.value })}
           />
           <datalist id={datalistId}>
-            {filteredModels.map((item) => (
-              <option key={`${item.category}-${item.id}`} value={item.id}>
-                {item.ownedBy ? `${item.categoryLabel} · ${item.ownedBy}` : item.categoryLabel}
-              </option>
-            ))}
+            {filteredModels.map((item) => {
+              const categoryLabel = t(MODEL_CATEGORY_LABEL_KEYS[item.category]);
+              return (
+                <option key={`${item.category}-${item.id}`} value={item.id}>
+                  {item.ownedBy
+                    ? t("settings.models.optionWithOwner", {
+                        category: categoryLabel,
+                        owner: item.ownedBy,
+                      })
+                    : categoryLabel}
+                </option>
+              );
+            })}
           </datalist>
           {modelsState.status === "success" && (
             <p className="mt-1.5 text-xs text-slate-500">
-              Loaded {modelsState.list.length} models ({imageModels.length} image-related, {filteredModels.length} shown). Classification is heuristic; you can still type any name manually.
+              {t("settings.models.loaded", {
+                total: modelsState.list.length,
+                image: imageModels.length,
+                shown: filteredModels.length,
+              })}
             </p>
           )}
           {modelsState.status === "error" && (
             <p className="mt-1.5 text-xs text-rose-600">{modelsState.error}</p>
           )}
           {modelsState.status === "idle" && (
-            <p className="mt-1.5 text-xs text-slate-500">
-              For relay providers, click Fetch models to load the live list, or just type any model name.
-            </p>
+            <p className="mt-1.5 text-xs text-slate-500">{t("settings.models.idle")}</p>
           )}
         </div>
 
-
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-slate-700">Response Format</span>
+          <span className="mb-1.5 block text-sm font-medium text-slate-700">
+            {t("settings.responseFormat")}
+          </span>
           <select
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             value={settings.responseFormat}
@@ -273,7 +309,9 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
         </label>
 
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-slate-700">Concurrency</span>
+          <span className="mb-1.5 block text-sm font-medium text-slate-700">
+            {t("settings.concurrency")}
+          </span>
           <input
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             type="number"
@@ -284,7 +322,7 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
           />
         </label>
 
-        <Notice variant="warning">Your API key is stored only in this browser.</Notice>
+        <Notice variant="warning">{t("settings.apiKeyNotice")}</Notice>
       </div>
     </section>
   );

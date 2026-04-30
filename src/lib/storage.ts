@@ -87,7 +87,7 @@ function restoreTask(value: Partial<ImageTask>): ImageTask | null {
     return {
       ...value,
       status: "cancelled",
-      error: "Task was interrupted by page reload.",
+      error: "tasks.messages.taskInterrupted",
       finishedAt: Date.now(),
     } as ImageTask;
   }

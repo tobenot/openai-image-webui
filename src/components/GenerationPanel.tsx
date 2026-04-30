@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import type { GenerateFormState } from "../types";
 import { Notice } from "./Notice";
 
@@ -12,6 +13,8 @@ interface GenerationPanelProps {
 }
 
 export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationPanelProps) {
+  const { t } = useTranslation();
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onSubmit();
@@ -20,16 +23,18 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
   return (
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
       <div className="mb-5">
-        <h2 className="text-lg font-semibold text-slate-950">Generate Images</h2>
-        <p className="mt-1 text-sm text-slate-500">Create queued image tasks from one prompt.</p>
+        <h2 className="text-lg font-semibold text-slate-950">{t("generation.title")}</h2>
+        <p className="mt-1 text-sm text-slate-500">{t("generation.subtitle")}</p>
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-slate-700">Prompt</span>
+          <span className="mb-1.5 block text-sm font-medium text-slate-700">
+            {t("generation.prompt")}
+          </span>
           <textarea
             className="min-h-32 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-            placeholder="A cute cat wearing sunglasses, cinematic lighting"
+            placeholder={t("generation.promptPlaceholder")}
             value={form.prompt}
             onChange={(event) => onChange({ prompt: event.target.value })}
           />
@@ -37,7 +42,9 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Image Count</span>
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">
+              {t("generation.imageCount")}
+            </span>
             <input
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
               type="number"
@@ -49,7 +56,9 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
           </label>
 
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Size</span>
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">
+              {t("generation.size")}
+            </span>
             <input
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
               value={form.size}
@@ -77,7 +86,7 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
 
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-slate-700">
-            Advanced JSON Params
+            {t("generation.advancedJsonParams")}
           </span>
           <textarea
             className="min-h-28 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
@@ -94,7 +103,7 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
           type="submit"
           disabled={!form.prompt.trim()}
         >
-          Generate
+          {t("generation.generate")}
         </button>
       </form>
     </section>

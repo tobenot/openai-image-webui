@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { GenerationPanel } from "./components/GenerationPanel";
 import { Header } from "./components/Header";
 import { ImagePreviewModal } from "./components/ImagePreviewModal";
@@ -12,21 +13,30 @@ import { parseAdvancedJson } from "./lib/parseAdvancedJson";
 import { DEFAULT_FORM } from "./lib/storage";
 import type { AppSettings, GenerateFormState } from "./types";
 
-function validateRequest(settings: AppSettings, form: GenerateFormState) {
+function validateRequest(
+  settings: AppSettings,
+  form: GenerateFormState,
+  messages: {
+    apiKeyRequired: string;
+    apiBaseUrlRequired: string;
+    modelRequired: string;
+    promptRequired: string;
+  },
+) {
   if (!settings.apiKey.trim()) {
-    throw new Error("API Key is required.");
+    throw new Error(messages.apiKeyRequired);
   }
 
   if (!settings.baseUrl.trim()) {
-    throw new Error("API Base URL is required.");
+    throw new Error(messages.apiBaseUrlRequired);
   }
 
   if (!settings.model.trim()) {
-    throw new Error("Model is required.");
+    throw new Error(messages.modelRequired);
   }
 
   if (!form.prompt.trim()) {
-    throw new Error("Prompt is required.");
+    throw new Error(messages.promptRequired);
   }
 }
 
@@ -40,6 +50,7 @@ function normalizeForm(form: GenerateFormState): GenerateFormState {
 }
 
 export default function App() {
+  const { i18n, t } = useTranslation();
   const { settings, setSettings, resetSettings } = useSettings();
   const [form, setForm] = useState<GenerateFormState>(DEFAULT_FORM);
   const [formError, setFormError] = useState("");
@@ -47,6 +58,15 @@ export default function App() {
   const { tasks, addTasks, retryTask, cancelTask, removeTask, clearTasks } = useImageTasks(settings);
 
   const closePreview = useCallback(() => setPreviewUrl(null), []);
+
+  useEffect(() => {
+    const language = i18n.resolvedLanguage?.startsWith("zh") ? "zh-CN" : "en";
+    document.documentElement.lang = language;
+    document.title = t("meta.title");
+    document
+      .querySelector('meta[name="description"]')
+      ?.setAttribute("content", t("meta.description"));
+  }, [i18n.resolvedLanguage, t]);
 
   function updateForm(next: Partial<GenerateFormState>) {
     setForm((current) => ({ ...current, ...next }));
@@ -57,12 +77,25 @@ export default function App() {
 
     try {
       const normalizedForm = normalizeForm(form);
-      validateRequest(settings, normalizedForm);
-      const extraParams = parseAdvancedJson(normalizedForm.advancedJson);
+      validateRequest(settings, normalizedForm, {
+        apiKeyRequired: t("errors.apiKeyRequired"),
+        apiBaseUrlRequired: t("errors.apiBaseUrlRequired"),
+        modelRequired: t("errors.modelRequired"),
+        promptRequired: t("errors.promptRequired"),
+      });
+      const extraParams = parseAdvancedJson(normalizedForm.advancedJson, {
+        invalidJson: t("errors.advancedJsonInvalid"),
+        mustBeObject: t("errors.advancedJsonObject"),
+      });
       addTasks(normalizedForm, extraParams);
       setForm((current) => ({ ...current, count: normalizedForm.count, size: normalizedForm.size }));
     } catch (error) {
-      setFormError(toFriendlyError(error));
+      setFormError(
+        toFriendlyError(error, {
+          unknown: t("errors.unknown"),
+          requestFailed: t("errors.requestFailed"),
+        }),
+      );
     }
   }
 
@@ -74,9 +107,7 @@ export default function App() {
         <main className="grid gap-6 lg:grid-cols-[360px_1fr]">
           <aside className="space-y-6">
             <SettingsPanel settings={settings} onChange={setSettings} onReset={resetSettings} />
-            <Notice>
-              If the same request works in curl/Postman but fails in browser, it is likely a CORS issue.
-            </Notice>
+            <Notice>{t("notice.cors")}</Notice>
           </aside>
 
           <div className="space-y-6">

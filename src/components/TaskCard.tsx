@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { copyText, downloadImage } from "../lib/download";
 import type { ImageTask } from "../types";
 
@@ -35,8 +36,16 @@ function actionButtonClass(disabled = false) {
   }`;
 }
 
+// Some persisted error strings are stored as i18n keys (e.g. "tasks.messages.taskCancelled")
+// so they can be re-translated when the user switches language. Anything else (such as
+// raw API error responses) is rendered as-is.
+function isI18nKey(value: string) {
+  return value.startsWith("tasks.messages.") || value.startsWith("errors.");
+}
+
 export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskCardProps) {
-  const [message, setMessage] = useState("");
+  const { t } = useTranslation();
+  const [messageKey, setMessageKey] = useState<string>("");
   const hasImage = Boolean(task.imageUrl);
   const canCancel = task.status === "pending" || task.status === "running";
 
@@ -46,12 +55,12 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
     }
 
     await copyText(task.imageUrl);
-    setMessage("Image URL copied.");
+    setMessageKey("tasks.messages.imageUrlCopied");
   }
 
   async function handleCopyPrompt() {
     await copyText(task.prompt);
-    setMessage("Prompt copied.");
+    setMessageKey("tasks.messages.promptCopied");
   }
 
   async function handleDownload() {
@@ -60,8 +69,14 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
     }
 
     await downloadImage(task.imageUrl, `openai-image-${task.id.slice(0, 8)}`);
-    setMessage("Download started.");
+    setMessageKey("tasks.messages.downloadStarted");
   }
+
+  const errorText = task.error
+    ? isI18nKey(task.error)
+      ? t(task.error)
+      : task.error
+    : "";
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -72,7 +87,7 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
               type="button"
               className="h-full w-full"
               onClick={() => onPreview(task.imageUrl as string)}
-              aria-label="Preview generated image"
+              aria-label={t("tasks.previewGeneratedImage")}
             >
               <img
                 className="h-full max-h-64 w-full object-cover"
@@ -83,7 +98,7 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
             </button>
           ) : (
             <div className="px-6 text-center text-sm text-slate-400">
-              {task.status === "running" ? "Generating..." : "No image yet"}
+              {task.status === "running" ? t("tasks.generating") : t("tasks.noImageYet")}
             </div>
           )}
         </div>
@@ -93,9 +108,11 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
             <span
               className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${statusStyles[task.status]}`}
             >
-              {task.status}
+              {t(`tasks.status.${task.status}`)}
             </span>
-            <span className="text-xs text-slate-400">Elapsed: {formatElapsed(task)}</span>
+            <span className="text-xs text-slate-400">
+              {t("tasks.elapsed", { value: formatElapsed(task) })}
+            </span>
             <span className="text-xs text-slate-400">
               {new Date(task.createdAt).toLocaleString()}
             </span>
@@ -105,26 +122,28 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
 
           <dl className="mb-4 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
             <div className="rounded-lg bg-slate-50 p-2">
-              <dt className="font-medium text-slate-700">Model</dt>
+              <dt className="font-medium text-slate-700">{t("tasks.fields.model")}</dt>
               <dd className="mt-1 break-all">{task.model}</dd>
             </div>
             <div className="rounded-lg bg-slate-50 p-2">
-              <dt className="font-medium text-slate-700">Size</dt>
+              <dt className="font-medium text-slate-700">{t("tasks.fields.size")}</dt>
               <dd className="mt-1">{task.size}</dd>
             </div>
             <div className="rounded-lg bg-slate-50 p-2">
-              <dt className="font-medium text-slate-700">Format</dt>
+              <dt className="font-medium text-slate-700">{t("tasks.fields.format")}</dt>
               <dd className="mt-1">{task.responseFormat}</dd>
             </div>
           </dl>
 
-          {task.error ? (
+          {errorText ? (
             <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {task.error}
+              {errorText}
             </div>
           ) : null}
 
-          {message ? <div className="mb-4 text-xs text-emerald-600">{message}</div> : null}
+          {messageKey ? (
+            <div className="mb-4 text-xs text-emerald-600">{t(messageKey)}</div>
+          ) : null}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -133,7 +152,7 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
               disabled={!hasImage}
               onClick={() => task.imageUrl && onPreview(task.imageUrl)}
             >
-              Preview
+              {t("tasks.actions.preview")}
             </button>
             <button
               type="button"
@@ -141,7 +160,7 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
               disabled={!hasImage}
               onClick={() => void handleDownload()}
             >
-              Download
+              {t("tasks.actions.download")}
             </button>
             <button
               type="button"
@@ -149,21 +168,21 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
               disabled={!hasImage}
               onClick={() => void handleCopyImage()}
             >
-              Copy image URL
+              {t("tasks.actions.copyImageUrl")}
             </button>
             <button type="button" className={actionButtonClass()} onClick={() => void handleCopyPrompt()}>
-              Copy prompt
+              {t("tasks.actions.copyPrompt")}
             </button>
             <button type="button" className={actionButtonClass()} onClick={() => onRetry(task.id)}>
-              Retry
+              {t("tasks.actions.retry")}
             </button>
             {canCancel ? (
               <button type="button" className={actionButtonClass()} onClick={() => onCancel(task.id)}>
-                Cancel
+                {t("tasks.actions.cancel")}
               </button>
             ) : null}
             <button type="button" className={actionButtonClass()} onClick={() => onRemove(task.id)}>
-              Delete
+              {t("tasks.actions.delete")}
             </button>
           </div>
         </div>
