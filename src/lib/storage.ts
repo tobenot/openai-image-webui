@@ -105,6 +105,26 @@ export function loadTasks(): ImageTask[] {
   return rawTasks.map(restoreTask).filter((task): task is ImageTask => task !== null);
 }
 
-export function saveTasks(tasks: ImageTask[]) {
-  writeJson(STORAGE_KEYS.tasks, tasks.slice(-100));
+function toPersistedTask(task: ImageTask): ImageTask {
+  const { b64Json: _b64Json, raw: _raw, ...persisted } = task;
+
+  if (
+    persisted.imageCached ||
+    persisted.imageUrl?.startsWith("blob:") ||
+    persisted.imageUrl?.startsWith("data:")
+  ) {
+    return {
+      ...persisted,
+      imageUrl: undefined,
+      b64Json: undefined,
+      raw: undefined,
+    };
+  }
+
+  return persisted;
 }
+
+export function saveTasks(tasks: ImageTask[]) {
+  writeJson(STORAGE_KEYS.tasks, tasks.slice(-100).map(toPersistedTask));
+}
+

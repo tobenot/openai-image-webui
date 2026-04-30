@@ -55,7 +55,18 @@ export default function App() {
   const [form, setForm] = useState<GenerateFormState>(DEFAULT_FORM);
   const [formError, setFormError] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const { tasks, addTasks, retryTask, cancelTask, removeTask, clearTasks } = useImageTasks(settings);
+  const {
+    tasks,
+    cacheStats,
+    addTasks,
+    retryTask,
+    cancelTask,
+    removeTask,
+    clearTaskImage,
+    clearCachedImages,
+    clearTasks,
+  } = useImageTasks(settings);
+
 
   const closePreview = useCallback(() => setPreviewUrl(null), []);
 
@@ -114,11 +125,15 @@ export default function App() {
             <GenerationPanel form={form} error={formError} onChange={updateForm} onSubmit={handleGenerate} />
             <TaskQueue
               tasks={tasks}
+              cacheStats={cacheStats}
               onPreview={setPreviewUrl}
               onRetry={retryTask}
               onCancel={cancelTask}
               onRemove={removeTask}
+              onClearTaskImage={clearTaskImage}
+              onClearImageCache={clearCachedImages}
             />
+
           </div>
         </main>
       </div>

@@ -1,16 +1,29 @@
 import { useTranslation } from "react-i18next";
-import type { ImageTask } from "../types";
+import type { ImageCacheStats, ImageTask } from "../types";
+import { ImageCacheSummary } from "./ImageCacheSummary";
 import { TaskCard } from "./TaskCard";
 
 interface TaskQueueProps {
   tasks: ImageTask[];
+  cacheStats: ImageCacheStats;
   onPreview: (imageUrl: string) => void;
   onRetry: (id: string) => void;
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
+  onClearTaskImage: (id: string) => void;
+  onClearImageCache: () => void;
 }
 
-export function TaskQueue({ tasks, onPreview, onRetry, onCancel, onRemove }: TaskQueueProps) {
+export function TaskQueue({
+  tasks,
+  cacheStats,
+  onPreview,
+  onRetry,
+  onCancel,
+  onRemove,
+  onClearTaskImage,
+  onClearImageCache,
+}: TaskQueueProps) {
   const { t } = useTranslation();
   const stats = {
     pending: tasks.filter((task) => task.status === "pending").length,
@@ -32,6 +45,10 @@ export function TaskQueue({ tasks, onPreview, onRetry, onCancel, onRemove }: Tas
         </div>
       </div>
 
+      <div className="mb-5">
+        <ImageCacheSummary stats={cacheStats} onClear={onClearImageCache} />
+      </div>
+
       {orderedTasks.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-14 text-center text-sm text-slate-500">
           {t("tasks.empty")}
@@ -46,6 +63,7 @@ export function TaskQueue({ tasks, onPreview, onRetry, onCancel, onRemove }: Tas
               onRetry={onRetry}
               onCancel={onCancel}
               onRemove={onRemove}
+              onClearImage={onClearTaskImage}
             />
           ))}
         </div>

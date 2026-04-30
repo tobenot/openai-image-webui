@@ -1,9 +1,11 @@
-function getFileExtension(imageUrl: string): string {
-  if (imageUrl.startsWith("data:image/jpeg")) {
+function getFileExtension(imageUrl: string, mimeType?: string): string {
+  const type = mimeType || imageUrl.match(/^data:([^;,]+)/)?.[1] || "";
+
+  if (type.includes("jpeg") || imageUrl.startsWith("data:image/jpeg")) {
     return "jpg";
   }
 
-  if (imageUrl.startsWith("data:image/webp")) {
+  if (type.includes("webp") || imageUrl.startsWith("data:image/webp")) {
     return "webp";
   }
 
@@ -20,11 +22,9 @@ function clickDownload(url: string, filename: string) {
   link.remove();
 }
 
-export async function downloadImage(imageUrl: string, filenameBase: string) {
-  const filename = `${filenameBase}.${getFileExtension(imageUrl)}`;
-
+export async function downloadImage(imageUrl: string, filenameBase: string, mimeType?: string) {
   if (imageUrl.startsWith("data:")) {
-    clickDownload(imageUrl, filename);
+    clickDownload(imageUrl, `${filenameBase}.${getFileExtension(imageUrl, mimeType)}`);
     return;
   }
 
@@ -32,10 +32,10 @@ export async function downloadImage(imageUrl: string, filenameBase: string) {
     const res = await fetch(imageUrl);
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
-    clickDownload(objectUrl, filename);
+    clickDownload(objectUrl, `${filenameBase}.${getFileExtension(imageUrl, blob.type || mimeType)}`);
     URL.revokeObjectURL(objectUrl);
   } catch {
-    clickDownload(imageUrl, filename);
+    clickDownload(imageUrl, `${filenameBase}.${getFileExtension(imageUrl, mimeType)}`);
   }
 }
 

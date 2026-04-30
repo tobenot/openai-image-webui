@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { generateImage, getImageGenerationDebug } from "../api/openaiImages";
-
+import {
+  cacheImageFromUrl,
+  clearImageCache,
+  deleteCachedImage,
+  getCachedImage,
+  getImageCacheStats,
+  IMAGE_CACHE_WARNING_BYTES,
+  type CachedImageRecord,
+} from "../lib/imageCache";
 import { toFriendlyError } from "../lib/errors";
 import { loadTasks, saveTasks } from "../lib/storage";
-import type { AppSettings, GenerateFormState, ImageTask } from "../types";
+import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask } from "../types";
 
 function createTaskId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -17,97 +25,259 @@ function normalizeConcurrency(value: number) {
   return Math.max(1, Math.floor(Number.isFinite(value) ? value : 1));
 }
 
+function createEmptyCacheStats(): ImageCacheStats {
+  return {
+    count: 0,
+    size: 0,
+    warningBytes: IMAGE_CACHE_WARNING_BYTES,
+    overWarning: false,
+  };
+}
+
+function isBlobUrl(value?: string) {
+  return Boolean(value?.startsWith("blob:"));
+}
+
+function isDataUrl(value?: string) {
+  return Boolean(value?.startsWith("data:"));
+}
+
+function isRemoteImageUrl(value?: string) {
+  return Boolean(value && /^https?:\/\//i.test(value));
+}
+
+function imageSourceFromTask(task: ImageTask) {
+  if (task.imageUrl) {
+    return task.imageUrl;
+  }
+
+  if (task.b64Json) {
+    return `data:image/png;base64,${task.b64Json}`;
+  }
+
+  return undefined;
+}
+
 export function useImageTasks(settings: AppSettings) {
   const [tasks, setTasks] = useState<ImageTask[]>(() => loadTasks());
+  const [cacheStats, setCacheStats] = useState<ImageCacheStats>(() => createEmptyCacheStats());
   const settingsRef = useRef(settings);
+  const tasksRef = useRef(tasks);
   const controllersRef = useRef(new Map<string, AbortController>());
+  const objectUrlsRef = useRef(new Set<string>());
+
+  const revokeObjectUrl = useCallback((url?: string) => {
+    if (!isBlobUrl(url)) {
+      return;
+    }
+
+    URL.revokeObjectURL(url as string);
+    objectUrlsRef.current.delete(url as string);
+  }, []);
+
+  const createObjectUrl = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    objectUrlsRef.current.add(url);
+    return url;
+  }, []);
+
+  const refreshCacheStats = useCallback(async () => {
+    try {
+      setCacheStats(await getImageCacheStats());
+    } catch {
+      setCacheStats(createEmptyCacheStats());
+    }
+  }, []);
+
+  const attachCachedImage = useCallback(
+    (taskId: string, record: CachedImageRecord) => {
+      const objectUrl = createObjectUrl(record.blob);
+
+      setTasks((current) =>
+        current.map((task) => {
+          if (task.id !== taskId) {
+            return task;
+          }
+
+          revokeObjectUrl(task.imageUrl);
+
+          return {
+            ...task,
+            imageUrl: objectUrl,
+            b64Json: undefined,
+            imageCached: true,
+            imageMimeType: record.mimeType,
+            imageSize: record.size,
+          };
+        }),
+      );
+    },
+    [createObjectUrl, revokeObjectUrl],
+  );
 
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
 
   useEffect(() => {
+    tasksRef.current = tasks;
     saveTasks(tasks);
   }, [tasks]);
 
-  const startTask = useCallback((task: ImageTask) => {
-    if (task.status !== "pending" || controllersRef.current.has(task.id)) {
-      return;
-    }
-
-    const controller = new AbortController();
-    controllersRef.current.set(task.id, controller);
-    const startedAt = Date.now();
-
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === task.id && item.status === "pending"
-          ? {
-              ...item,
-              status: "running",
-              startedAt,
-              finishedAt: undefined,
-              error: undefined,
-              debug: undefined,
-            }
-
-          : item,
-      ),
-    );
+  useEffect(() => {
+    let active = true;
 
     void (async () => {
-      try {
-        const currentSettings = settingsRef.current;
-        const result = await generateImage({
-          apiKey: currentSettings.apiKey,
-          baseUrl: currentSettings.baseUrl,
-          model: task.model,
-          prompt: task.prompt,
-          size: task.size,
-          responseFormat: task.responseFormat,
-          extraParams: task.extraParams,
-          signal: controller.signal,
-        });
+      await refreshCacheStats();
 
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id
-              ? {
-                  ...item,
-                  status: "success",
-                  imageUrl: result.imageUrl,
-                  b64Json: result.b64Json,
-                  raw: result.raw,
-                  debug: result.debug,
-                  error: undefined,
-                  finishedAt: Date.now(),
+      for (const task of tasksRef.current) {
+        if (!active) {
+          return;
+        }
 
-                }
-              : item,
-          ),
-        );
-      } catch (error) {
-        const wasAborted = controller.signal.aborted;
-        const debug = wasAborted ? undefined : getImageGenerationDebug(error);
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id
-              ? {
-                  ...item,
-                  status: wasAborted ? "cancelled" : "error",
-                  error: wasAborted ? "tasks.messages.taskCancelled" : toFriendlyError(error),
-                  debug,
-                  finishedAt: Date.now(),
-                }
-              : item,
-          ),
-        );
+        try {
+          if (task.imageCached) {
+            const cached = await getCachedImage(task.id);
 
-      } finally {
-        controllersRef.current.delete(task.id);
+            if (cached && active) {
+              attachCachedImage(task.id, cached);
+            }
+            continue;
+          }
+
+          const source = imageSourceFromTask(task);
+
+          if (!source || (!isDataUrl(source) && !isRemoteImageUrl(source))) {
+            continue;
+          }
+
+          const cached = await cacheImageFromUrl(task.id, source);
+
+          if (active) {
+            attachCachedImage(task.id, cached);
+            await refreshCacheStats();
+          }
+        } catch (error) {
+          console.warn("[openai-image-webui] Failed to restore image cache", error);
+        }
       }
     })();
-  }, []);
+
+    return () => {
+      active = false;
+    };
+  }, [attachCachedImage, refreshCacheStats]);
+
+  const cacheGeneratedImage = useCallback(
+    async (taskId: string, imageUrl: string, signal: AbortSignal) => {
+      try {
+        const cached = await cacheImageFromUrl(taskId, imageUrl, signal);
+        await refreshCacheStats();
+        return {
+          imageUrl: createObjectUrl(cached.blob),
+          imageCached: true,
+          imageMimeType: cached.mimeType,
+          imageSize: cached.size,
+        };
+      } catch (error) {
+        if (signal.aborted) {
+          throw error;
+        }
+
+        console.warn("[openai-image-webui] Failed to cache generated image", error);
+        return {
+          imageUrl,
+          imageCached: false,
+          imageMimeType: undefined,
+          imageSize: undefined,
+        };
+      }
+    },
+    [createObjectUrl, refreshCacheStats],
+  );
+
+  const startTask = useCallback(
+    (task: ImageTask) => {
+      if (task.status !== "pending" || controllersRef.current.has(task.id)) {
+        return;
+      }
+
+      const controller = new AbortController();
+      controllersRef.current.set(task.id, controller);
+      const startedAt = Date.now();
+
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === task.id && item.status === "pending"
+            ? {
+                ...item,
+                status: "running",
+                startedAt,
+                finishedAt: undefined,
+                error: undefined,
+                debug: undefined,
+              }
+            : item,
+        ),
+      );
+
+      void (async () => {
+        try {
+          const currentSettings = settingsRef.current;
+          const result = await generateImage({
+            apiKey: currentSettings.apiKey,
+            baseUrl: currentSettings.baseUrl,
+            model: task.model,
+            prompt: task.prompt,
+            size: task.size,
+            responseFormat: task.responseFormat,
+            extraParams: task.extraParams,
+            signal: controller.signal,
+          });
+          const cachedImage = await cacheGeneratedImage(task.id, result.imageUrl, controller.signal);
+
+          setTasks((current) =>
+            current.map((item) =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    status: "success",
+                    imageUrl: cachedImage.imageUrl,
+                    b64Json: undefined,
+                    imageCached: cachedImage.imageCached,
+                    imageMimeType: cachedImage.imageMimeType,
+                    imageSize: cachedImage.imageSize,
+                    raw: result.raw,
+                    debug: result.debug,
+                    error: undefined,
+                    finishedAt: Date.now(),
+                  }
+                : item,
+            ),
+          );
+        } catch (error) {
+          const wasAborted = controller.signal.aborted;
+          const debug = wasAborted ? undefined : getImageGenerationDebug(error);
+          setTasks((current) =>
+            current.map((item) =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    status: wasAborted ? "cancelled" : "error",
+                    error: wasAborted ? "tasks.messages.taskCancelled" : toFriendlyError(error),
+                    debug,
+                    finishedAt: Date.now(),
+                  }
+                : item,
+            ),
+          );
+        } finally {
+          controllersRef.current.delete(task.id);
+        }
+      })();
+    },
+    [cacheGeneratedImage],
+  );
 
   useEffect(() => {
     const concurrency = normalizeConcurrency(settings.concurrency);
@@ -127,6 +297,8 @@ export function useImageTasks(settings: AppSettings) {
     return () => {
       controllersRef.current.forEach((controller) => controller.abort());
       controllersRef.current.clear();
+      objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      objectUrlsRef.current.clear();
     };
   }, []);
 
@@ -153,6 +325,10 @@ export function useImageTasks(settings: AppSettings) {
       return;
     }
 
+    const currentTask = tasksRef.current.find((task) => task.id === id);
+    revokeObjectUrl(currentTask?.imageUrl);
+    void deleteCachedImage(id).then(refreshCacheStats).catch(() => undefined);
+
     setTasks((current) =>
       current.map((task) =>
         task.id === id
@@ -161,11 +337,13 @@ export function useImageTasks(settings: AppSettings) {
               status: "pending",
               imageUrl: undefined,
               b64Json: undefined,
+              imageCached: false,
+              imageMimeType: undefined,
+              imageSize: undefined,
               raw: undefined,
               debug: undefined,
               error: undefined,
               startedAt: undefined,
-
               finishedAt: undefined,
               createdAt: Date.now(),
             }
@@ -198,23 +376,75 @@ export function useImageTasks(settings: AppSettings) {
 
   function removeTask(id: string) {
     const controller = controllersRef.current.get(id);
+    const currentTask = tasksRef.current.find((task) => task.id === id);
+
     controller?.abort();
     controllersRef.current.delete(id);
+    revokeObjectUrl(currentTask?.imageUrl);
+    void deleteCachedImage(id).then(refreshCacheStats).catch(() => undefined);
     setTasks((current) => current.filter((task) => task.id !== id));
+  }
+
+  function clearTaskImage(id: string) {
+    const currentTask = tasksRef.current.find((task) => task.id === id);
+    revokeObjectUrl(currentTask?.imageUrl);
+    void deleteCachedImage(id).then(refreshCacheStats).catch(() => undefined);
+
+    setTasks((current) =>
+      current.map((task) =>
+        task.id === id
+          ? {
+              ...task,
+              imageUrl: undefined,
+              b64Json: undefined,
+              imageCached: false,
+              imageMimeType: undefined,
+              imageSize: undefined,
+            }
+          : task,
+      ),
+    );
+  }
+
+  function clearCachedImages() {
+    objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    objectUrlsRef.current.clear();
+    void clearImageCache().then(refreshCacheStats).catch(() => undefined);
+
+    setTasks((current) =>
+      current.map((task) =>
+        task.imageCached || isBlobUrl(task.imageUrl) || isDataUrl(task.imageUrl)
+          ? {
+              ...task,
+              imageUrl: undefined,
+              b64Json: undefined,
+              imageCached: false,
+              imageMimeType: undefined,
+              imageSize: undefined,
+            }
+          : task,
+      ),
+    );
   }
 
   function clearTasks() {
     controllersRef.current.forEach((controller) => controller.abort());
     controllersRef.current.clear();
+    objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    objectUrlsRef.current.clear();
+    void clearImageCache().then(refreshCacheStats).catch(() => undefined);
     setTasks([]);
   }
 
   return {
     tasks,
+    cacheStats,
     addTasks,
     retryTask,
     cancelTask,
     removeTask,
+    clearTaskImage,
+    clearCachedImages,
     clearTasks,
   };
 }

@@ -105,8 +105,10 @@ export const resources = {
         elapsed: "Elapsed: {{value}}",
         generating: "Generating...",
         noImageYet: "No image yet",
+        restoringCachedImage: "Restoring cached image...",
         previewGeneratedImage: "Preview generated image",
         debugDetails: "Debug details",
+
         fields: {
           model: "Model",
           size: "Size",
@@ -125,18 +127,30 @@ export const resources = {
           copyImageUrl: "Copy image URL",
           copyPrompt: "Copy prompt",
           copyDebug: "Copy debug JSON",
+          deleteImageCache: "Delete image cache",
           retry: "Retry",
           cancel: "Cancel",
           delete: "Delete",
         },
+        cache: {
+          title: "Image cache",
+          summary: "{{count}} images · {{size}}",
+          warning: "Cache is over 200 MB. Consider clearing old images.",
+          clear: "Clear cache",
+          clearConfirm: "Clear all cached images? Task records will stay, but images may disappear from history.",
+          cachedBadge: "cached",
+        },
         messages: {
+
           imageUrlCopied: "Image URL copied.",
           promptCopied: "Prompt copied.",
           debugCopied: "Debug JSON copied.",
           downloadStarted: "Download started.",
+          imageCacheDeleted: "Image cache deleted.",
           taskCancelled: "Task cancelled.",
           taskInterrupted: "Task was interrupted by page reload.",
         },
+
       },
       preview: {
         closePreview: "Close preview",
@@ -251,8 +265,10 @@ export const resources = {
         elapsed: "耗时：{{value}}",
         generating: "生成中...",
         noImageYet: "暂无图片",
+        restoringCachedImage: "正在恢复缓存图片...",
         previewGeneratedImage: "预览生成图片",
         debugDetails: "调试详情",
+
         fields: {
           model: "模型",
           size: "尺寸",
@@ -271,18 +287,30 @@ export const resources = {
           copyImageUrl: "复制图片 URL",
           copyPrompt: "复制提示词",
           copyDebug: "复制调试 JSON",
+          deleteImageCache: "删除图片缓存",
           retry: "重试",
           cancel: "取消",
           delete: "删除",
         },
+        cache: {
+          title: "图片缓存",
+          summary: "{{count}} 张 · {{size}}",
+          warning: "缓存已超过 200MB，建议清理旧图片。",
+          clear: "清空缓存",
+          clearConfirm: "确定清空所有缓存图片吗？任务记录会保留，但历史图片可能不再显示。",
+          cachedBadge: "已缓存",
+        },
         messages: {
+
           imageUrlCopied: "图片 URL 已复制。",
           promptCopied: "提示词已复制。",
           debugCopied: "调试 JSON 已复制。",
           downloadStarted: "已开始下载。",
+          imageCacheDeleted: "图片缓存已删除。",
           taskCancelled: "任务已取消。",
           taskInterrupted: "任务因页面重新加载而中断。",
         },
+
       },
       preview: {
         closePreview: "关闭预览",

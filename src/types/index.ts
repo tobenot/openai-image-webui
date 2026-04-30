@@ -41,6 +41,9 @@ export interface ImageTask {
   status: ImageTaskStatus;
   imageUrl?: string;
   b64Json?: string;
+  imageCached?: boolean;
+  imageMimeType?: string;
+  imageSize?: number;
   error?: string;
   createdAt: number;
   startedAt?: number;
@@ -49,6 +52,14 @@ export interface ImageTask {
   debug?: ImageTaskDebug;
   extraParams?: Record<string, unknown>;
 }
+
+export interface ImageCacheStats {
+  count: number;
+  size: number;
+  warningBytes: number;
+  overWarning: boolean;
+}
+
 
 export interface GenerateImageParams {
 

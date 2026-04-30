@@ -9,6 +9,7 @@ interface TaskCardProps {
   onRetry: (id: string) => void;
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
+  onClearImage: (id: string) => void;
 }
 
 const statusStyles: Record<ImageTask["status"], string> = {
@@ -52,6 +53,8 @@ function formatTaskDebug(task: ImageTask, errorText: string) {
       model: task.model,
       size: task.size,
       responseFormat: task.responseFormat,
+      imageCached: task.imageCached,
+      imageSize: task.imageSize,
       debug: task.debug,
     },
     null,
@@ -59,16 +62,15 @@ function formatTaskDebug(task: ImageTask, errorText: string) {
   );
 }
 
-export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskCardProps) {
-
+export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClearImage }: TaskCardProps) {
   const { t } = useTranslation();
   const [messageKey, setMessageKey] = useState<string>("");
   const hasImage = Boolean(task.imageUrl);
+  const hasStoredImage = hasImage || Boolean(task.imageCached);
   const hasDebug = Boolean(task.debug);
   const canCancel = task.status === "pending" || task.status === "running";
 
   async function handleCopyImage() {
-
     if (!task.imageUrl) {
       return;
     }
@@ -92,13 +94,22 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
   }
 
   async function handleDownload() {
-
     if (!task.imageUrl) {
       return;
     }
 
-    await downloadImage(task.imageUrl, `openai-image-${task.id.slice(0, 8)}`);
+    await downloadImage(task.imageUrl, `openai-image-${task.id.slice(0, 8)}`, task.imageMimeType);
+
     setMessageKey("tasks.messages.downloadStarted");
+  }
+
+  function handleClearImage() {
+    if (!hasStoredImage) {
+      return;
+    }
+
+    onClearImage(task.id);
+    setMessageKey("tasks.messages.imageCacheDeleted");
   }
 
   const errorText = task.error
@@ -107,9 +118,13 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
       : task.error
     : "";
   const debugText = hasDebug ? formatTaskDebug(task, errorText) : "";
+  const placeholderText = task.imageCached
+    ? t("tasks.restoringCachedImage")
+    : task.status === "running"
+      ? t("tasks.generating")
+      : t("tasks.noImageYet");
 
   return (
-
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="grid gap-0 md:grid-cols-[220px_1fr]">
         <div className="flex min-h-52 items-center justify-center bg-slate-100">
@@ -128,9 +143,7 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
               />
             </button>
           ) : (
-            <div className="px-6 text-center text-sm text-slate-400">
-              {task.status === "running" ? t("tasks.generating") : t("tasks.noImageYet")}
-            </div>
+            <div className="px-6 text-center text-sm text-slate-400">{placeholderText}</div>
           )}
         </div>
 
@@ -147,6 +160,11 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
             <span className="text-xs text-slate-400">
               {new Date(task.createdAt).toLocaleString()}
             </span>
+            {task.imageCached ? (
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+                {t("tasks.cache.cachedBadge")}
+              </span>
+            ) : null}
           </div>
 
           <p className="mb-3 line-clamp-3 text-sm leading-6 text-slate-700">{task.prompt}</p>
@@ -183,10 +201,7 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
             </details>
           ) : null}
 
-          {messageKey ? (
-
-            <div className="mb-4 text-xs text-emerald-600">{t(messageKey)}</div>
-          ) : null}
+          {messageKey ? <div className="mb-4 text-xs text-emerald-600">{t(messageKey)}</div> : null}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -224,8 +239,15 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove }: TaskC
             >
               {t("tasks.actions.copyDebug")}
             </button>
+            <button
+              type="button"
+              className={actionButtonClass(!hasStoredImage)}
+              disabled={!hasStoredImage}
+              onClick={handleClearImage}
+            >
+              {t("tasks.actions.deleteImageCache")}
+            </button>
             <button type="button" className={actionButtonClass()} onClick={() => onRetry(task.id)}>
-
               {t("tasks.actions.retry")}
             </button>
             {canCancel ? (
