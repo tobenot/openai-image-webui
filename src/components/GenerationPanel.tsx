@@ -1,31 +1,14 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { GenerateFormState } from "../types";
 import { Notice } from "./Notice";
 
 const SIZE_STEP = 64;
+const MIN_SIZE = 256;
+const MAX_SIZE = 4096;
+const DEFAULT_SIZE = 1024;
 const RECENT_SIZE_LIMIT = 6;
 const RECENT_SIZE_STORAGE_KEY = "openai-image-webui:recent-sizes";
-const QUALITY_OPTIONS = [
-  { key: "1k", longEdge: 1024 },
-  { key: "2k", longEdge: 2048 },
-  { key: "4k", longEdge: 4096 },
-] as const;
-
-const RATIO_OPTIONS = [
-  { key: "1:1", width: 1, height: 1 },
-  { key: "2:3", width: 2, height: 3 },
-  { key: "3:4", width: 3, height: 4 },
-  { key: "4:5", width: 4, height: 5 },
-  { key: "5:4", width: 5, height: 4 },
-  { key: "4:3", width: 4, height: 3 },
-  { key: "3:2", width: 3, height: 2 },
-  { key: "9:16", width: 9, height: 16 },
-  { key: "16:9", width: 16, height: 9 },
-] as const;
-
-const RATIO_SLIDER_MIN = 1;
-const RATIO_SLIDER_MAX = 16;
 
 const COMMON_SIZE_OPTIONS = [
   "512x768",
@@ -43,7 +26,6 @@ const COMMON_SIZE_OPTIONS = [
   "2048x1536",
 ] as const;
 
-
 interface GenerationPanelProps {
   form: GenerateFormState;
   error: string;
@@ -55,16 +37,8 @@ function roundToSizeStep(value: number) {
   return Math.max(SIZE_STEP, Math.round(value / SIZE_STEP) * SIZE_STEP);
 }
 
-function buildSize(widthRatio: number, heightRatio: number, longEdge: number) {
-  if (widthRatio >= heightRatio) {
-    const width = longEdge;
-    const height = roundToSizeStep((longEdge * heightRatio) / widthRatio);
-    return `${width}x${height}`;
-  }
-
-  const width = roundToSizeStep((longEdge * widthRatio) / heightRatio);
-  const height = longEdge;
-  return `${width}x${height}`;
+function clampDimension(value: number) {
+  return Math.min(MAX_SIZE, Math.max(MIN_SIZE, roundToSizeStep(value)));
 }
 
 function normalizeSize(value: string) {
@@ -75,6 +49,26 @@ function normalizeSize(value: string) {
   }
 
   return cleaned.toLowerCase();
+}
+
+function parseSize(value: string) {
+  const normalized = normalizeSize(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const [widthPart, heightPart] = normalized.split("x");
+  const width = Number(widthPart);
+  const height = Number(heightPart);
+
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return {
+    width: clampDimension(width),
+    height: clampDimension(height),
+  };
 }
 
 function greatestCommonDivisor(a: number, b: number): number {
@@ -91,21 +85,17 @@ function greatestCommonDivisor(a: number, b: number): number {
 }
 
 function getRatioLabel(size: string) {
-  const normalized = normalizeSize(size);
-  const [widthPart, heightPart] = normalized.split("x");
-  const width = Number(widthPart);
-  const height = Number(heightPart);
+  const parsed = parseSize(size);
 
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+  if (!parsed) {
     return "";
   }
 
-  const divisor = greatestCommonDivisor(width, height);
-  return `${Math.round(width / divisor)}:${Math.round(height / divisor)}`;
+  const divisor = greatestCommonDivisor(parsed.width, parsed.height);
+  return `${Math.round(parsed.width / divisor)}:${Math.round(parsed.height / divisor)}`;
 }
 
 function loadRecentSizes() {
-
   try {
     const raw = localStorage.getItem(RECENT_SIZE_STORAGE_KEY);
     if (!raw) {
@@ -136,23 +126,23 @@ function saveRecentSizes(sizes: string[]) {
 
 export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationPanelProps) {
   const { t } = useTranslation();
-  const [selectedQuality, setSelectedQuality] = useState<(typeof QUALITY_OPTIONS)[number]["key"]>("1k");
-  const [ratioWidth, setRatioWidth] = useState(1);
-  const [ratioHeight, setRatioHeight] = useState(1);
+  const initialParsedSize = parseSize(form.size);
+  const [sliderWidth, setSliderWidth] = useState(initialParsedSize?.width ?? DEFAULT_SIZE);
+  const [sliderHeight, setSliderHeight] = useState(initialParsedSize?.height ?? DEFAULT_SIZE);
   const [recentSizes, setRecentSizes] = useState<string[]>(() => loadRecentSizes());
 
-  const selectedQualityConfig = useMemo(
-    () => QUALITY_OPTIONS.find((option) => option.key === selectedQuality) ?? QUALITY_OPTIONS[0],
-    [selectedQuality],
-  );
+  useEffect(() => {
+    const parsed = parseSize(form.size);
+    if (!parsed) {
+      return;
+    }
 
-  const currentRatioLabel = useMemo(() => `${ratioWidth}:${ratioHeight}`, [ratioHeight, ratioWidth]);
+    setSliderWidth((current) => (current === parsed.width ? current : parsed.width));
+    setSliderHeight((current) => (current === parsed.height ? current : parsed.height));
+  }, [form.size]);
 
-  const suggestedSize = useMemo(
-    () => buildSize(ratioWidth, ratioHeight, selectedQualityConfig.longEdge),
-    [ratioHeight, ratioWidth, selectedQualityConfig.longEdge],
-  );
-
+  const currentSize = useMemo(() => `${sliderWidth}x${sliderHeight}`, [sliderHeight, sliderWidth]);
+  const currentRatioLabel = useMemo(() => getRatioLabel(currentSize), [currentSize]);
 
   function rememberSize(value: string) {
     const normalized = normalizeSize(value);
@@ -172,8 +162,17 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
   }
 
   function applySize(value: string) {
-    onChange({ size: value });
-    rememberSize(value);
+    const parsed = parseSize(value);
+    if (!parsed) {
+      onChange({ size: value });
+      return;
+    }
+
+    const normalizedSize = `${parsed.width}x${parsed.height}`;
+    setSliderWidth(parsed.width);
+    setSliderHeight(parsed.height);
+    onChange({ size: normalizedSize });
+    rememberSize(normalizedSize);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -181,16 +180,6 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
     rememberSize(form.size);
     onSubmit();
   }
-
-  function applyQuickSize(
-    nextRatioWidth: number,
-    nextRatioHeight: number,
-    nextQualityKey: (typeof QUALITY_OPTIONS)[number]["key"],
-  ) {
-    const quality = QUALITY_OPTIONS.find((option) => option.key === nextQualityKey) ?? QUALITY_OPTIONS[0];
-    applySize(buildSize(nextRatioWidth, nextRatioHeight, quality.longEdge));
-  }
-
 
   return (
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
@@ -236,99 +225,55 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
               placeholder={t("generation.sizePlaceholder")}
               value={form.size}
               onChange={(event) => onChange({ size: event.target.value })}
-              onBlur={() => rememberSize(form.size)}
+              onBlur={() => applySize(form.size)}
             />
           </label>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-          <p className="text-xs font-medium text-slate-600">{t("generation.quickSizePreset")}</p>
-
-          <div className="mt-2 flex flex-wrap gap-2">
-            {RATIO_OPTIONS.map((ratio) => (
-              <button
-                key={ratio.key}
-                type="button"
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                  ratioWidth === ratio.width && ratioHeight === ratio.height
-                    ? "border-sky-400 bg-sky-50 text-sky-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-                onClick={() => {
-                  setRatioWidth(ratio.width);
-                  setRatioHeight(ratio.height);
-                  applyQuickSize(ratio.width, ratio.height, selectedQuality);
-                }}
-              >
-                {ratio.key}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-            <p className="text-xs font-medium text-slate-600">{t("generation.ratioSlider")}</p>
-            <p className="mt-1 text-xs text-slate-500">{t("generation.currentRatio", { ratio: currentRatioLabel })}</p>
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs text-slate-600">
-                <span className="mb-1 block">{t("generation.widthRatio")}: {ratioWidth}</span>
-                <input
-                  type="range"
-                  min={RATIO_SLIDER_MIN}
-                  max={RATIO_SLIDER_MAX}
-                  step={1}
-                  value={ratioWidth}
-                  className="w-full"
-                  onChange={(event) => {
-                    const nextWidth = Number(event.target.value);
-                    setRatioWidth(nextWidth);
-                    applyQuickSize(nextWidth, ratioHeight, selectedQuality);
-                  }}
-                />
-              </label>
-              <label className="block text-xs text-slate-600">
-                <span className="mb-1 block">{t("generation.heightRatio")}: {ratioHeight}</span>
-                <input
-                  type="range"
-                  min={RATIO_SLIDER_MIN}
-                  max={RATIO_SLIDER_MAX}
-                  step={1}
-                  value={ratioHeight}
-                  className="w-full"
-                  onChange={(event) => {
-                    const nextHeight = Number(event.target.value);
-                    setRatioHeight(nextHeight);
-                    applyQuickSize(ratioWidth, nextHeight, selectedQuality);
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="mt-2 flex flex-wrap gap-2">
-            {QUALITY_OPTIONS.map((quality) => (
-              <button
-                key={quality.key}
-                type="button"
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                  selectedQuality === quality.key
-                    ? "border-violet-400 bg-violet-50 text-violet-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-                onClick={() => {
-                  setSelectedQuality(quality.key);
-                  applyQuickSize(ratioWidth, ratioHeight, quality.key);
-                }}
-              >
-                {t(`generation.quality.${quality.key}`)}
-              </button>
-            ))}
-          </div>
-
-          <p className="mt-2 text-xs text-slate-500">
-            {t("generation.recommendedSize", { size: suggestedSize })}
+          <p className="text-xs font-medium text-slate-600">{t("generation.resolutionSlider")}</p>
+          <p className="mt-1 text-xs text-slate-500">{t("generation.currentSize", { size: currentSize })}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {t("generation.currentRatioAuto", { ratio: currentRatioLabel || "-" })}
           </p>
-        </div>
+          <p className="mt-1 text-xs text-slate-500">{t("generation.sizeStepHint", { step: SIZE_STEP })}</p>
 
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs text-slate-600">
+              <span className="mb-1 block">{t("generation.widthPixels")}: {sliderWidth}</span>
+              <input
+                type="range"
+                min={MIN_SIZE}
+                max={MAX_SIZE}
+                step={SIZE_STEP}
+                value={sliderWidth}
+                className="w-full"
+                onChange={(event) => {
+                  const nextWidth = clampDimension(Number(event.target.value));
+                  setSliderWidth(nextWidth);
+                  applySize(`${nextWidth}x${sliderHeight}`);
+                }}
+              />
+            </label>
+
+            <label className="block text-xs text-slate-600">
+              <span className="mb-1 block">{t("generation.heightPixels")}: {sliderHeight}</span>
+              <input
+                type="range"
+                min={MIN_SIZE}
+                max={MAX_SIZE}
+                step={SIZE_STEP}
+                value={sliderHeight}
+                className="w-full"
+                onChange={(event) => {
+                  const nextHeight = clampDimension(Number(event.target.value));
+                  setSliderHeight(nextHeight);
+                  applySize(`${sliderWidth}x${nextHeight}`);
+                }}
+              />
+            </label>
+          </div>
+        </div>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           <p className="text-xs font-medium text-slate-600">{t("generation.commonSizes")}</p>
@@ -350,7 +295,6 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
             ))}
           </div>
         </div>
-
 
         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           <p className="text-xs font-medium text-slate-600">{t("generation.recentSizes")}</p>
@@ -401,5 +345,3 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
     </section>
   );
 }
-
-
