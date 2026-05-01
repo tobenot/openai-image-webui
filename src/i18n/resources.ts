@@ -94,6 +94,21 @@ export const resources = {
         },
         advancedJsonParams: "Advanced JSON Params",
         generate: "Generate",
+        edit: "Edit",
+        inputImages: {
+          title: "Input images (optional)",
+          hint: "Upload to enable edit mode. With images, requests go to /images/edits.",
+          addButton: "Add image",
+          addMaskButton: "Add mask",
+          mask: "Mask (optional)",
+          maskHint: "Same size as the first image. Transparent areas are editable.",
+          remove: "Remove",
+          size: "{{width}}×{{height}}",
+          editModeBadge: "Edit mode",
+          dropHere: "Drop images here",
+          multipleImagesWarning:
+            "The selected model may not support multiple reference images; only the first one could be honoured.",
+        },
       },
 
       workspace: {
@@ -176,6 +191,11 @@ export const resources = {
           imageCacheDeleted: "Image cache deleted.",
           taskCancelled: "Task cancelled.",
           taskInterrupted: "Task was interrupted by page reload.",
+          editInputsDropped:
+            "Input images were released from memory. Please re-upload to retry this edit.",
+          inputImageInvalid: "Invalid input image: {{reason}}",
+          maskMismatch:
+            "Mask dimensions do not match the first image. They must be identical.",
         },
 
       },
@@ -282,6 +302,21 @@ export const resources = {
         },
         advancedJsonParams: "高级 JSON 参数",
         generate: "生成",
+        edit: "编辑",
+        inputImages: {
+          title: "输入图片（可选）",
+          hint: "上传图片将自动进入编辑模式，请求会改走 /images/edits。",
+          addButton: "添加图片",
+          addMaskButton: "添加 Mask",
+          mask: "Mask（可选）",
+          maskHint: "尺寸必须与首张图一致，透明区域为可编辑区域。",
+          remove: "移除",
+          size: "{{width}}×{{height}}",
+          editModeBadge: "编辑模式",
+          dropHere: "拖拽图片到此处",
+          multipleImagesWarning:
+            "当前模型可能不支持多参考图，实际只有第一张会被使用。",
+        },
       },
 
       workspace: {
@@ -363,6 +398,9 @@ export const resources = {
           imageCacheDeleted: "图片缓存已删除。",
           taskCancelled: "任务已取消。",
           taskInterrupted: "任务因页面重新加载而中断。",
+          editInputsDropped: "输入图片已从内存释放，请重新上传后再重试编辑任务。",
+          inputImageInvalid: "输入图片不合法：{{reason}}",
+          maskMismatch: "Mask 尺寸与首张图不一致，两者尺寸必须完全相同。",
         },
 
       },

@@ -18,6 +18,8 @@ export const DEFAULT_FORM: GenerateFormState = {
   count: 1,
   size: "1024x1024",
   advancedJson: "",
+  inputImages: [],
+  maskImage: null,
 };
 
 const TASK_STATUSES = new Set<ImageTaskStatus>([
@@ -83,16 +85,23 @@ function restoreTask(value: Partial<ImageTask>): ImageTask | null {
     return null;
   }
 
-  if (value.status === "pending" || value.status === "running") {
+  // Legacy tasks persisted before the edit-mode feature have no `mode`.
+  // Default them to "generate" so they keep rendering correctly.
+  const migrated = {
+    ...value,
+    mode: value.mode === "edit" ? "edit" : "generate",
+  } as ImageTask;
+
+  if (migrated.status === "pending" || migrated.status === "running") {
     return {
-      ...value,
+      ...migrated,
       status: "cancelled",
       error: "tasks.messages.taskInterrupted",
       finishedAt: Date.now(),
-    } as ImageTask;
+    };
   }
 
-  return value as ImageTask;
+  return migrated;
 }
 
 export function loadTasks(): ImageTask[] {

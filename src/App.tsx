@@ -106,6 +106,10 @@ export default function App() {
       });
       addTasks(normalizedForm, extraParams);
       setActivePanel("tasks");
+      // Keep inputImages/maskImage in the form — user may want to tweak the
+      // prompt and re-submit. Revoking their object URLs here would break
+      // the in-flight task's preview data too. They get cleared when the
+      // user explicitly removes them.
       setForm((current) => ({ ...current, count: normalizedForm.count, size: normalizedForm.size }));
 
     } catch (error) {
@@ -130,7 +134,7 @@ export default function App() {
           </aside>
 
           <div className="space-y-6">
-            <GenerationPanel form={form} error={formError} onChange={updateForm} onSubmit={handleGenerate} />
+            <GenerationPanel form={form} error={formError} model={settings.model} onChange={updateForm} onSubmit={handleGenerate} />
             <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
               <div className="grid grid-cols-2 gap-1">
                 {(["tasks", "library"] as const).map((panel) => (

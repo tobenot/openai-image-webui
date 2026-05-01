@@ -69,13 +69,14 @@ The official OpenAI JavaScript SDK can target browsers only when `dangerouslyAll
 ## API Format
 
 
-This app calls:
+This app calls one of two endpoints, depending on whether any input images are attached:
 
 ```txt
-POST {baseUrl}/images/generations
+POST {baseUrl}/images/generations     # text → image, JSON body
+POST {baseUrl}/images/edits           # image(s) + prompt → image, multipart/form-data
 ```
 
-Example request body:
+Example generation request body:
 
 ```json
 {
@@ -86,6 +87,8 @@ Example request body:
   "response_format": "url"
 }
 ```
+
+Edit requests are sent as `multipart/form-data` with the same logical fields plus one or more `image` parts and an optional `mask` part. The response shape is identical to generations.
 
 Supported response formats:
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { generateImage, getImageGenerationDebug } from "../api/openaiImages";
+import { editImage, generateImage, getImageGenerationDebug } from "../api/openaiImages";
 import {
   cacheImageFromUrl,
   clearImageCache,
@@ -12,6 +12,11 @@ import {
 import { toFriendlyError } from "../lib/errors";
 import { loadTasks, saveTasks } from "../lib/storage";
 import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask } from "../types";
+
+interface PendingEditInputs {
+  images: File[];
+  mask: File | null;
+}
 
 function createTaskId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -65,6 +70,9 @@ export function useImageTasks(settings: AppSettings) {
   const tasksRef = useRef(tasks);
   const controllersRef = useRef(new Map<string, AbortController>());
   const objectUrlsRef = useRef(new Set<string>());
+  // Edit-mode inputs can't be persisted (they're raw File blobs). Keep them in
+  // memory keyed by task id; drop entries once the task finishes or is removed.
+  const pendingInputsRef = useRef(new Map<string, PendingEditInputs>());
 
   const revokeObjectUrl = useCallback((url?: string) => {
     if (!isBlobUrl(url)) {
@@ -243,16 +251,38 @@ export function useImageTasks(settings: AppSettings) {
       void (async () => {
         try {
           const currentSettings = settingsRef.current;
-          const result = await generateImage({
-            apiKey: currentSettings.apiKey,
-            baseUrl: currentSettings.baseUrl,
-            model: task.model,
-            prompt: task.prompt,
-            size: task.size,
-            responseFormat: task.responseFormat,
-            extraParams: task.extraParams,
-            signal: controller.signal,
-          });
+          const pendingInputs = pendingInputsRef.current.get(task.id);
+          const shouldEdit = task.mode === "edit";
+
+          if (shouldEdit && (!pendingInputs || pendingInputs.images.length === 0)) {
+            throw new Error(
+              "Edit task is missing its input images. They are only kept in memory; please re-upload and try again.",
+            );
+          }
+
+          const result = shouldEdit
+            ? await editImage({
+                apiKey: currentSettings.apiKey,
+                baseUrl: currentSettings.baseUrl,
+                model: task.model,
+                prompt: task.prompt,
+                size: task.size,
+                responseFormat: task.responseFormat,
+                extraParams: task.extraParams,
+                images: pendingInputs!.images,
+                mask: pendingInputs!.mask,
+                signal: controller.signal,
+              })
+            : await generateImage({
+                apiKey: currentSettings.apiKey,
+                baseUrl: currentSettings.baseUrl,
+                model: task.model,
+                prompt: task.prompt,
+                size: task.size,
+                responseFormat: task.responseFormat,
+                extraParams: task.extraParams,
+                signal: controller.signal,
+              });
           const cachedImage = await cacheGeneratedImage(task, result.imageUrl, controller.signal);
 
 
@@ -293,6 +323,7 @@ export function useImageTasks(settings: AppSettings) {
           );
         } finally {
           controllersRef.current.delete(task.id);
+          pendingInputsRef.current.delete(task.id);
         }
       })();
     },
@@ -317,6 +348,7 @@ export function useImageTasks(settings: AppSettings) {
     return () => {
       controllersRef.current.forEach((controller) => controller.abort());
       controllersRef.current.clear();
+      pendingInputsRef.current.clear();
       objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       objectUrlsRef.current.clear();
     };
@@ -326,16 +358,32 @@ export function useImageTasks(settings: AppSettings) {
     const count = Math.max(1, Math.floor(form.count || 1));
     const now = Date.now();
     const currentSettings = settingsRef.current;
-    const newTasks: ImageTask[] = Array.from({ length: count }, (_, index) => ({
-      id: createTaskId(),
-      prompt: form.prompt.trim(),
-      model: currentSettings.model.trim(),
-      size: form.size.trim(),
-      responseFormat: currentSettings.responseFormat,
-      status: "pending",
-      createdAt: now + index,
-      extraParams,
-    }));
+    const inputImageFiles = form.inputImages.map((item) => item.file);
+    const maskFile = form.maskImage?.file ?? null;
+    const isEdit = inputImageFiles.length > 0;
+
+    const newTasks: ImageTask[] = Array.from({ length: count }, (_, index) => {
+      const id = createTaskId();
+      if (isEdit) {
+        pendingInputsRef.current.set(id, {
+          images: inputImageFiles,
+          mask: maskFile,
+        });
+      }
+      return {
+        id,
+        mode: isEdit ? "edit" : "generate",
+        prompt: form.prompt.trim(),
+        model: currentSettings.model.trim(),
+        size: form.size.trim(),
+        responseFormat: currentSettings.responseFormat,
+        status: "pending",
+        createdAt: now + index,
+        extraParams,
+        inputImageCount: isEdit ? inputImageFiles.length : undefined,
+        hasMask: isEdit && maskFile ? true : undefined,
+      };
+    });
 
     setTasks((current) => [...current, ...newTasks]);
   }
@@ -348,6 +396,31 @@ export function useImageTasks(settings: AppSettings) {
     const currentTask = tasksRef.current.find((task) => task.id === id);
     revokeObjectUrl(currentTask?.imageUrl);
     void deleteCachedImage(id).then(refreshCacheStats).catch(() => undefined);
+
+    // Edit tasks can only be retried if the input File blobs are still in
+    // memory (i.e. the task was never successful and pendingInputs was kept).
+    // Otherwise we mark it as error-with-message — the user needs to re-upload.
+    if (currentTask?.mode === "edit" && !pendingInputsRef.current.has(id)) {
+      setTasks((current) =>
+        current.map((task) =>
+          task.id === id
+            ? {
+                ...task,
+                status: "error",
+                error: "tasks.messages.editInputsDropped",
+                imageUrl: undefined,
+                b64Json: undefined,
+                imageCached: false,
+                imageMimeType: undefined,
+                imageSize: undefined,
+                raw: undefined,
+                finishedAt: Date.now(),
+              }
+            : task,
+        ),
+      );
+      return;
+    }
 
     setTasks((current) =>
       current.map((task) =>
@@ -400,6 +473,7 @@ export function useImageTasks(settings: AppSettings) {
 
     controller?.abort();
     controllersRef.current.delete(id);
+    pendingInputsRef.current.delete(id);
     revokeObjectUrl(currentTask?.imageUrl);
     setTasks((current) => current.filter((task) => task.id !== id));
 
@@ -450,6 +524,7 @@ export function useImageTasks(settings: AppSettings) {
   function clearTasks() {
     controllersRef.current.forEach((controller) => controller.abort());
     controllersRef.current.clear();
+    pendingInputsRef.current.clear();
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     objectUrlsRef.current.clear();
     setTasks([]);

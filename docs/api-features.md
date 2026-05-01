@@ -1,13 +1,15 @@
 # OpenAI Images API — Features Reference
 
-This app is a thin BYOK frontend over the OpenAI Images API. Anything the API itself supports is potentially usable here. The UI exposes the most common controls (model, size, n, response format, concurrency); everything else can be passed through the **Advanced JSON** field on the generation panel and is forwarded as-is to the request body.
+This app is a thin BYOK frontend over the OpenAI Images API. Anything the API itself supports is potentially usable here. The UI exposes the most common controls (model, size, n, response format, concurrency, input images, mask); everything else can be passed through the **Advanced JSON** field on the generation panel and is forwarded as-is to the request body / form.
 
 This document lists the parameters and capabilities you can take advantage of. It applies to the official OpenAI endpoint and to any OpenAI-compatible relay (e.g. LaoZhang) that mirrors the same surface.
 
-> Endpoint actually called by this app:
+> Endpoints actually called by this app:
 > ```
-> POST {baseUrl}/images/generations
+> POST {baseUrl}/images/generations    (text → image)
+> POST {baseUrl}/images/edits          (image(s) + prompt → image, multipart/form-data)
 > ```
+> Which one is used depends on whether the user uploaded any input images.
 
 ---
 
@@ -37,8 +39,21 @@ The filter is only for convenience. It does not guarantee that a model works wit
 | Prompt              | `prompt`          | Required.                                                             |
 | Size                | `size`            | E.g. `1024x1024`, `1792x1024`, `1024x1792`.                           |
 | Response format     | `response_format` | `url` or `b64_json`.                                                   |
+| **Input images**    | `image` (multipart) | Upload one or more reference images to enter edit mode (request auto-switches to `/images/edits`). |
+| **Mask**            | `mask` (multipart) | Optional inpainting mask; must be PNG and match the first image's size. |
 | Concurrency         | (client-side)     | How many tasks run in parallel; does not map to a request field.      |
 | Count               | (client-side)     | The app issues N independent requests with `n: 1` each.               |
+
+When any input image is attached, the request is sent as `multipart/form-data` to `/images/edits` instead of as JSON to `/images/generations`. All of the fields above (prompt, size, response_format, Advanced JSON passthroughs) still apply — they become form parts instead of JSON keys.
+
+### Input image preprocessing
+
+The frontend validates and (when needed) downscales images before upload to avoid upstream 400/413 errors:
+
+- Accepted MIME types: `image/png`, `image/jpeg`, `image/webp`.
+- When the selected model is `dall-e-2`, only `image/png` is accepted and the image must be square.
+- Any file larger than 8 MB or with a side longer than 2048 px is re-encoded via canvas to a 2048-px longest-side version. PNG stays PNG to preserve alpha; JPEG/WebP stay in format at quality 0.92.
+- Mask must match the first image's width/height exactly; otherwise the UI rejects it before sending.
 
 ---
 
@@ -107,10 +122,15 @@ Anything else the upstream supports (e.g. provider-specific `seed`, `negative_pr
 
 These exist on the OpenAI Images surface but are not wired up in the UI:
 
-- `POST /v1/images/edits` — image editing with mask. Would need a multipart/form-data uploader; not implemented.
-- `POST /v1/images/variations` — variations from a source image. Same reason.
+- `POST /v1/images/variations` — variations from a source image (no prompt). Only `dall-e-2` supports it; `gpt-image-1/2` subsumes the semantics into edits. Not implemented.
 
-If you need these, file an issue or a PR. They are deliberately out of scope for the current "text → image" flow.
+If you need variations, file an issue or a PR.
+
+### Edit-mode caveats
+
+- Input File blobs live **only in memory** — they are not persisted into localStorage. Reloading the page drops them; queued edit tasks that hadn't started will be marked cancelled.
+- Retrying a finished edit task requires re-uploading the original images. The UI surfaces a clear message (`editInputsDropped`) when this happens.
+- Not every OpenAI-compatible relay keeps pace with OpenAI on `/images/edits`. If a relay returns 404 / "not implemented" for edits while `/images/generations` works, that is a relay-side gap.
 
 ---
 

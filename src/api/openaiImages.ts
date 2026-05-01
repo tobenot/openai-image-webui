@@ -1,6 +1,12 @@
-import type { GenerateImageParams, GenerateImageResult, ImageTaskDebug } from "../types";
+import type {
+  EditImageParams,
+  GenerateImageParams,
+  GenerateImageResult,
+  ImageTaskDebug,
+} from "../types";
 
-const DEBUG_LOG_PREFIX = "[openai-image-webui] images/generations";
+const DEBUG_LOG_PREFIX_GENERATE = "[openai-image-webui] images/generations";
+const DEBUG_LOG_PREFIX_EDIT = "[openai-image-webui] images/edits";
 const MAX_DEBUG_STRING_LENGTH = 1_000;
 
 export class ImageGenerationError extends Error {
@@ -99,6 +105,63 @@ function getOpenAiImageItem(data: unknown): { url?: string; b64_json?: string } 
   return item as { url?: string; b64_json?: string };
 }
 
+function fillResponseDebug(debug: ImageTaskDebug, res: Response, bodyText: string, parsed: unknown) {
+  debug.responseStatus = res.status;
+  debug.responseStatusText = res.statusText;
+  debug.responseContentType = res.headers.get("content-type");
+  debug.responseBodyText = truncateDebugString(bodyText);
+  debug.parsedResponse = sanitizeDebugValue(parsed);
+}
+
+function imageItemToResult(
+  parsed: unknown,
+  debug: ImageTaskDebug,
+): GenerateImageResult {
+  const item = getOpenAiImageItem(parsed);
+
+  if (!item) {
+    throw new ImageGenerationError("No image data returned.", debug);
+  }
+
+  if (item.url) {
+    return {
+      imageUrl: item.url,
+      raw: parsed,
+      debug,
+    };
+  }
+
+  if (item.b64_json) {
+    return {
+      imageUrl: `data:image/png;base64,${item.b64_json}`,
+      b64Json: item.b64_json,
+      raw: parsed,
+      debug,
+    };
+  }
+
+  throw new ImageGenerationError("Unsupported image response format.", debug);
+}
+
+function assertBasicParams(params: GenerateImageParams) {
+  if (!params.apiKey.trim()) {
+    throw new Error("API Key is required.");
+  }
+  if (!params.baseUrl.trim()) {
+    throw new Error("API Base URL is required.");
+  }
+  if (!params.model.trim()) {
+    throw new Error("Model is required.");
+  }
+  if (!params.prompt.trim()) {
+    throw new Error("Prompt is required.");
+  }
+}
+
+function joinBaseUrl(baseUrl: string, path: string) {
+  return `${baseUrl.trim().replace(/\/$/, "")}${path}`;
+}
+
 export async function generateImage(
   params: GenerateImageParams,
 ): Promise<GenerateImageResult> {
@@ -113,23 +176,9 @@ export async function generateImage(
     signal,
   } = params;
 
-  if (!apiKey.trim()) {
-    throw new Error("API Key is required.");
-  }
+  assertBasicParams(params);
 
-  if (!baseUrl.trim()) {
-    throw new Error("API Base URL is required.");
-  }
-
-  if (!model.trim()) {
-    throw new Error("Model is required.");
-  }
-
-  if (!prompt.trim()) {
-    throw new Error("Prompt is required.");
-  }
-
-  const endpoint = `${baseUrl.trim().replace(/\/$/, "")}/images/generations`;
+  const endpoint = joinBaseUrl(baseUrl, "/images/generations");
   const body = {
     model: model.trim(),
     prompt: prompt.trim(),
@@ -140,7 +189,7 @@ export async function generateImage(
   };
   const debug = createDebug(endpoint, body);
 
-  console.debug(`${DEBUG_LOG_PREFIX} request`, debug);
+  console.debug(`${DEBUG_LOG_PREFIX_GENERATE} request`, debug);
 
   const res = await fetch(endpoint, {
     method: "POST",
@@ -154,14 +203,9 @@ export async function generateImage(
 
   const responseBodyText = await res.text().catch(() => "");
   const parsedResponse = parseJsonResponse(responseBodyText);
+  fillResponseDebug(debug, res, responseBodyText, parsedResponse);
 
-  debug.responseStatus = res.status;
-  debug.responseStatusText = res.statusText;
-  debug.responseContentType = res.headers.get("content-type");
-  debug.responseBodyText = truncateDebugString(responseBodyText);
-  debug.parsedResponse = sanitizeDebugValue(parsedResponse);
-
-  console.debug(`${DEBUG_LOG_PREFIX} response`, debug);
+  console.debug(`${DEBUG_LOG_PREFIX_GENERATE} response`, debug);
 
   if (!res.ok) {
     throw new ImageGenerationError(readApiError(res, responseBodyText), debug);
@@ -171,29 +215,110 @@ export async function generateImage(
     throw new ImageGenerationError("Invalid or empty JSON response.", debug);
   }
 
-  const item = getOpenAiImageItem(parsedResponse);
-
-  if (!item) {
-    throw new ImageGenerationError("No image data returned.", debug);
-  }
-
-  if (item.url) {
-    return {
-      imageUrl: item.url,
-      raw: parsedResponse,
-      debug,
-    };
-  }
-
-  if (item.b64_json) {
-    return {
-      imageUrl: `data:image/png;base64,${item.b64_json}`,
-      b64Json: item.b64_json,
-      raw: parsedResponse,
-      debug,
-    };
-  }
-
-  throw new ImageGenerationError("Unsupported image response format.", debug);
+  return imageItemToResult(parsedResponse, debug);
 }
 
+/**
+ * Call POST {baseUrl}/images/edits with multipart/form-data.
+ *
+ * IMPORTANT: Do NOT set Content-Type manually when sending FormData. The browser
+ * must populate the boundary itself; servers reject requests where the boundary
+ * is missing or mismatched.
+ */
+export async function editImage(params: EditImageParams): Promise<GenerateImageResult> {
+  const {
+    apiKey,
+    baseUrl,
+    model,
+    prompt,
+    size,
+    responseFormat = "url",
+    extraParams = {},
+    images,
+    mask,
+    signal,
+  } = params;
+
+  assertBasicParams(params);
+
+  if (!images.length) {
+    throw new Error("At least one input image is required for edits.");
+  }
+
+  const endpoint = joinBaseUrl(baseUrl, "/images/edits");
+  const form = new FormData();
+  form.append("model", model.trim());
+  form.append("prompt", prompt.trim());
+  form.append("n", "1");
+  if (size?.trim()) {
+    form.append("size", size.trim());
+  }
+  if (responseFormat) {
+    form.append("response_format", responseFormat);
+  }
+
+  // Multi-image reference: append the same field name multiple times. The
+  // server sees it as an array. Both "image" and "image[]" are used in the
+  // wild; "image" is the form accepted by OpenAI's own docs.
+  images.forEach((file) => {
+    form.append("image", file, file.name);
+  });
+
+  if (mask) {
+    form.append("mask", mask, mask.name);
+  }
+
+  // Passthrough of quality / background / output_format / seed / etc.
+  for (const [key, value] of Object.entries(extraParams)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      form.append(key, String(value));
+    } else {
+      // Arrays / objects are JSON-stringified; behaviour varies by upstream,
+      // but this matches what OpenAI-compatible relays commonly accept.
+      form.append(key, JSON.stringify(value));
+    }
+  }
+
+  const debugBody: Record<string, unknown> = {
+    model: model.trim(),
+    prompt: prompt.trim(),
+    n: 1,
+    size: size?.trim(),
+    response_format: responseFormat,
+    imageCount: images.length,
+    imageNames: images.map((f) => `${f.name} (${f.type}, ${f.size}B)`),
+    hasMask: Boolean(mask),
+    maskName: mask ? `${mask.name} (${mask.type}, ${mask.size}B)` : undefined,
+    extraParams,
+  };
+  const debug = createDebug(endpoint, debugBody);
+
+  console.debug(`${DEBUG_LOG_PREFIX_EDIT} request`, debug);
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      // No Content-Type — browser will attach multipart boundary automatically.
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: form,
+    signal,
+  });
+
+  const responseBodyText = await res.text().catch(() => "");
+  const parsedResponse = parseJsonResponse(responseBodyText);
+  fillResponseDebug(debug, res, responseBodyText, parsedResponse);
+
+  console.debug(`${DEBUG_LOG_PREFIX_EDIT} response`, debug);
+
+  if (!res.ok) {
+    throw new ImageGenerationError(readApiError(res, responseBodyText), debug);
+  }
+
+  if (!parsedResponse) {
+    throw new ImageGenerationError("Invalid or empty JSON response.", debug);
+  }
+
+  return imageItemToResult(parsedResponse, debug);
+}

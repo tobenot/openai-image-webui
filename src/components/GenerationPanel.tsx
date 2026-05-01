@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import type { GenerateFormState } from "../types";
+import type { GenerateFormState, InputImageFile } from "../types";
+import {
+  assertMaskMatchesImage,
+  InputImageError,
+  modelLikelySupportsMultipleImages,
+  modelRequiresStrictPng,
+  prepareInputImage,
+} from "../lib/imageInput";
 import { Notice } from "./Notice";
 
 const SIZE_STEP = 64;
@@ -29,6 +36,8 @@ const COMMON_SIZE_OPTIONS = [
 interface GenerationPanelProps {
   form: GenerateFormState;
   error: string;
+  /** Used to decide strict PNG enforcement and multi-image warnings. */
+  model?: string;
   onChange: (next: Partial<GenerateFormState>) => void;
   onSubmit: () => void;
 }
@@ -124,12 +133,19 @@ function saveRecentSizes(sizes: string[]) {
   }
 }
 
-export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationPanelProps) {
+export function GenerationPanel({ form, error, model, onChange, onSubmit }: GenerationPanelProps) {
   const { t } = useTranslation();
   const initialParsedSize = parseSize(form.size);
   const [sliderWidth, setSliderWidth] = useState(initialParsedSize?.width ?? DEFAULT_SIZE);
   const [sliderHeight, setSliderHeight] = useState(initialParsedSize?.height ?? DEFAULT_SIZE);
   const [recentSizes, setRecentSizes] = useState<string[]>(() => loadRecentSizes());
+  const [inputImageError, setInputImageError] = useState("");
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
+  const maskFileInputRef = useRef<HTMLInputElement>(null);
+
+  const strictPng = modelRequiresStrictPng(model ?? "");
+  const supportsMultiImage = modelLikelySupportsMultipleImages(model ?? "");
+  const isEditMode = form.inputImages.length > 0;
 
   useEffect(() => {
     const parsed = parseSize(form.size);
@@ -181,6 +197,94 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
     onSubmit();
   }
 
+  async function handleAddInputImages(files: FileList | File[]) {
+    setInputImageError("");
+    const list = Array.from(files);
+    const prepared: InputImageFile[] = [];
+    for (const file of list) {
+      try {
+        const item = await prepareInputImage(file, { strictPngOnly: strictPng });
+        prepared.push(item);
+      } catch (err) {
+        const reason = err instanceof InputImageError ? err.message : String(err);
+        setInputImageError(t("generation.inputImages.title") + ": " + reason);
+        prepared.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+        return;
+      }
+    }
+    if (prepared.length === 0) return;
+    onChange({ inputImages: [...form.inputImages, ...prepared] });
+  }
+
+  async function handleAddMask(file: File) {
+    setInputImageError("");
+    if (form.inputImages.length === 0) {
+      setInputImageError(t("generation.inputImages.mask") + ": requires at least one input image first.");
+      return;
+    }
+    try {
+      const mask = await prepareInputImage(file, { strictPngOnly: true });
+      assertMaskMatchesImage(mask, form.inputImages[0]);
+      if (form.maskImage) URL.revokeObjectURL(form.maskImage.previewUrl);
+      onChange({ maskImage: mask });
+    } catch (err) {
+      const reason = err instanceof InputImageError ? err.message : String(err);
+      setInputImageError(t("generation.inputImages.mask") + ": " + reason);
+    }
+  }
+
+  function removeInputImage(id: string) {
+    const next = form.inputImages.filter((item) => {
+      if (item.id === id) {
+        URL.revokeObjectURL(item.previewUrl);
+        return false;
+      }
+      return true;
+    });
+    onChange({ inputImages: next });
+    // Mask must be dropped if its reference (first image) is gone.
+    if (next.length === 0 && form.maskImage) {
+      URL.revokeObjectURL(form.maskImage.previewUrl);
+      onChange({ maskImage: null });
+    }
+  }
+
+  function removeMask() {
+    if (form.maskImage) URL.revokeObjectURL(form.maskImage.previewUrl);
+    onChange({ maskImage: null });
+  }
+
+  function onImageInputChange(event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.files && event.target.files.length > 0) {
+      void handleAddInputImages(event.target.files);
+    }
+    event.target.value = "";
+  }
+
+  function onMaskInputChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) {
+      void handleAddMask(file);
+    }
+    event.target.value = "";
+  }
+
+  function onDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const files = event.dataTransfer?.files;
+    if (files && files.length > 0) {
+      void handleAddInputImages(files);
+    }
+  }
+
+  function onDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+  }
+
+  const acceptMime = strictPng ? "image/png" : "image/png,image/jpeg,image/webp";
+  const showMultiImageWarning =
+    form.inputImages.length > 1 && !!model && !supportsMultiImage;
+
   return (
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
       <div className="mb-5">
@@ -200,6 +304,121 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
             onChange={(event) => onChange({ prompt: event.target.value })}
           />
         </label>
+
+        <div
+          className={`rounded-xl border p-3 transition ${
+            isEditMode
+              ? "border-emerald-300 bg-emerald-50/60"
+              : "border-slate-200 bg-slate-50/70"
+          }`}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-slate-600">
+              {t("generation.inputImages.title")}
+            </p>
+            {isEditMode ? (
+              <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[11px] font-semibold text-white">
+                {t("generation.inputImages.editModeBadge")}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">{t("generation.inputImages.hint")}</p>
+
+          <div className="mt-2 flex flex-wrap gap-2">
+            {form.inputImages.map((item) => (
+              <div
+                key={item.id}
+                className="group relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-white"
+                title={`${item.file.name} · ${item.width}×${item.height}`}
+              >
+                <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  className="absolute right-0 top-0 rounded-bl-lg bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
+                  onClick={() => removeInputImage(item.id)}
+                >
+                  {t("generation.inputImages.remove")}
+                </button>
+                <span className="absolute bottom-0 left-0 right-0 bg-slate-900/70 px-1 py-0.5 text-center text-[10px] text-white">
+                  {t("generation.inputImages.size", { width: item.width, height: item.height })}
+                </span>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-xs font-medium text-slate-500 transition hover:border-sky-400 hover:text-sky-600"
+              onClick={() => imageFileInputRef.current?.click()}
+            >
+              + {t("generation.inputImages.addButton")}
+            </button>
+            <input
+              ref={imageFileInputRef}
+              type="file"
+              accept={acceptMime}
+              multiple
+              hidden
+              onChange={onImageInputChange}
+            />
+          </div>
+
+          {isEditMode ? (
+            <div className="mt-3">
+              <p className="text-xs font-medium text-slate-600">{t("generation.inputImages.mask")}</p>
+              <p className="mt-1 text-xs text-slate-500">{t("generation.inputImages.maskHint")}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {form.maskImage ? (
+                  <div
+                    className="group relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-white"
+                    title={`${form.maskImage.file.name} · ${form.maskImage.width}×${form.maskImage.height}`}
+                  >
+                    <img
+                      src={form.maskImage.previewUrl}
+                      alt={form.maskImage.file.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-0 top-0 rounded-bl-lg bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
+                      onClick={removeMask}
+                    >
+                      {t("generation.inputImages.remove")}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-xs font-medium text-slate-500 transition hover:border-sky-400 hover:text-sky-600"
+                      onClick={() => maskFileInputRef.current?.click()}
+                    >
+                      + {t("generation.inputImages.addMaskButton")}
+                    </button>
+                    <input
+                      ref={maskFileInputRef}
+                      type="file"
+                      accept="image/png"
+                      hidden
+                      onChange={onMaskInputChange}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          {showMultiImageWarning ? (
+            <p className="mt-2 text-xs text-amber-700">
+              {t("generation.inputImages.multipleImagesWarning")}
+            </p>
+          ) : null}
+
+          {inputImageError ? (
+            <p className="mt-2 text-xs text-rose-600">{inputImageError}</p>
+          ) : null}
+        </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block">
@@ -339,7 +558,7 @@ export function GenerationPanel({ form, error, onChange, onSubmit }: GenerationP
           type="submit"
           disabled={!form.prompt.trim()}
         >
-          {t("generation.generate")}
+          {isEditMode ? t("generation.edit") : t("generation.generate")}
         </button>
       </form>
     </section>

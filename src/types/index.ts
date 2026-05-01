@@ -7,6 +7,8 @@ export type ImageTaskStatus =
 
 export type ImageResponseFormat = "url" | "b64_json";
 
+export type RequestMode = "generate" | "edit";
+
 export interface AppSettings {
   apiKey: string;
   baseUrl: string;
@@ -15,11 +17,25 @@ export interface AppSettings {
   concurrency: number;
 }
 
+/**
+ * An image the user supplied as input (reference image for edits).
+ * Stored in-memory only — not persisted to localStorage.
+ */
+export interface InputImageFile {
+  id: string;
+  file: File;
+  previewUrl: string;
+  width: number;
+  height: number;
+}
+
 export interface GenerateFormState {
   prompt: string;
   count: number;
   size: string;
   advancedJson: string;
+  inputImages: InputImageFile[];
+  maskImage: InputImageFile | null;
 }
 
 export interface ImageTaskDebug {
@@ -34,6 +50,7 @@ export interface ImageTaskDebug {
 
 export interface ImageTask {
   id: string;
+  mode: RequestMode;
   prompt: string;
   model: string;
   size: string;
@@ -51,6 +68,12 @@ export interface ImageTask {
   raw?: unknown;
   debug?: ImageTaskDebug;
   extraParams?: Record<string, unknown>;
+  /**
+   * Number of input images used for an edit request. Purely metadata for debug /
+   * display; the actual File blobs are never persisted.
+   */
+  inputImageCount?: number;
+  hasMask?: boolean;
 }
 
 export interface ImageCacheStats {
@@ -71,6 +94,13 @@ export interface GenerateImageParams {
   responseFormat?: ImageResponseFormat;
   extraParams?: Record<string, unknown>;
   signal?: AbortSignal;
+}
+
+export interface EditImageParams extends GenerateImageParams {
+  /** At least one image is required for edits. */
+  images: File[];
+  /** Optional inpainting mask — must match the first image's dimensions. */
+  mask?: File | null;
 }
 
 export interface GenerateImageResult {
