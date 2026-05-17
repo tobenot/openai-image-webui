@@ -131,45 +131,58 @@ const GEMINI_3_1K_SIZES: Record<string, string> = {
   "1:8": "384x3072",
 };
 
+function normalizeModelNeedle(model: string) {
+  return model
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/-+/g, "-");
+}
+
+function includesAll(needle: string, tokens: readonly string[]) {
+  return tokens.every((token) => needle.includes(token));
+}
+
 function isDalle2(model: string) {
-  const needle = model.trim().toLowerCase();
-  return needle === "dall-e-2" || needle.startsWith("dall-e-2-");
+  const needle = normalizeModelNeedle(model);
+  return needle.includes("dall-e-2") || needle.includes("dalle-2");
 }
 
 function isDalle3(model: string) {
-  const needle = model.trim().toLowerCase();
-  return needle === "dall-e-3" || needle.startsWith("dall-e-3-");
-}
-
-function isGptImage1(model: string) {
-  const needle = model.trim().toLowerCase();
-  return needle === "gpt-image-1" || needle.startsWith("gpt-image-1-");
+  const needle = normalizeModelNeedle(model);
+  return needle.includes("dall-e-3") || needle.includes("dalle-3");
 }
 
 function isGptImage2(model: string) {
-  const needle = model.trim().toLowerCase();
-  return needle === "gpt-image-2" || needle.startsWith("gpt-image-2-");
+  const needle = normalizeModelNeedle(model);
+  return needle.includes("gpt-image-2") || includesAll(needle, ["gpt", "image", "2"]);
+}
+
+function isGenericGptImage(model: string) {
+  const needle = normalizeModelNeedle(model);
+  return includesAll(needle, ["gpt", "image"]);
+}
+
+function isGptImage1(model: string) {
+  const needle = normalizeModelNeedle(model);
+  if (needle.includes("gpt-image-1") || includesAll(needle, ["gpt", "image", "1"])) {
+    return true;
+  }
+  return isGenericGptImage(model) && !isGptImage2(model);
 }
 
 function isGeminiImage(model: string) {
-  const needle = model.trim().toLowerCase();
-  return (
-    needle.includes("nano-banana") ||
-    needle.includes("gemini-flash-image") ||
-    needle.includes("gemini-2.5-flash-image") ||
-    needle.includes("gemini-3.1-flash-image") ||
-    needle.includes("gemini-3-pro-image") ||
-    needle.includes("gemini-3.0-pro-image")
-  );
+  const needle = normalizeModelNeedle(model);
+  return needle.includes("gemini") || needle.includes("nano-banana") || needle.includes("banana");
 }
 
 function isGemini31Image(model: string) {
-  const needle = model.trim().toLowerCase();
+  const needle = normalizeModelNeedle(model);
   return needle.includes("3.1") || needle.includes("banana-2") || needle.includes("nano-banana-2");
 }
 
 function isGeminiProImage(model: string) {
-  const needle = model.trim().toLowerCase();
+  const needle = normalizeModelNeedle(model);
   return needle.includes("pro-image") || needle.includes("banana-pro") || needle.includes("nano-banana-pro");
 }
 
