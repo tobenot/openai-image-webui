@@ -8,6 +8,7 @@ import {
   modelRequiresStrictPng,
   prepareInputImage,
 } from "../lib/imageInput";
+import { GENERAL_SIZE_GROUPS, getModelSizingProfile, getSizePresetGroupsForModel } from "../lib/imageSizing";
 import { Notice } from "./Notice";
 
 const SIZE_STEP = 64;
@@ -17,51 +18,8 @@ const DEFAULT_SIZE = 1024;
 const RECENT_SIZE_LIMIT = 6;
 const RECENT_SIZE_STORAGE_KEY = "openai-image-webui:recent-sizes";
 
-/**
- * Common sizes grouped by aspect ratio.
- * Each group has a label (ratio) and a list of resolutions in ascending order.
- */
-const COMMON_SIZE_GROUPS = [
-  {
-    ratio: "1:1",
-    sizes: ["512x512", "768x768", "1024x1024", "1536x1536", "2048x2048"],
-  },
-  {
-    ratio: "4:3",
-    sizes: ["768x576", "1024x768", "1536x1152", "2048x1536"],
-  },
-  {
-    ratio: "3:4",
-    sizes: ["576x768", "768x1024", "1152x1536", "1536x2048"],
-  },
-  {
-    ratio: "3:2",
-    sizes: ["768x512", "1024x768", "1536x1024", "2048x1360"],
-  },
-  {
-    ratio: "2:3",
-    sizes: ["512x768", "768x1024", "1024x1536", "1360x2048"],
-  },
-  {
-    ratio: "16:9",
-    sizes: ["1024x576", "1280x720", "1536x864", "1920x1088", "2560x1472"],
-  },
-  {
-    ratio: "9:16",
-    sizes: ["576x1024", "720x1280", "864x1536", "1088x1920", "1472x2560"],
-  },
-  {
-    ratio: "21:9",
-    sizes: ["1344x576", "1792x768", "2688x1152"],
-  },
-  {
-    ratio: "9:21",
-    sizes: ["576x1344", "768x1792", "1152x2688"],
-  },
-] as const;
 
-/** Flat list for backwards-compatible checks */
-const COMMON_SIZE_OPTIONS = COMMON_SIZE_GROUPS.flatMap((g) => g.sizes);
+
 
 interface GenerationPanelProps {
   form: GenerateFormState;
@@ -72,12 +30,20 @@ interface GenerationPanelProps {
   onSubmit: () => void;
 }
 
-function roundToSizeStep(value: number) {
-  return Math.max(SIZE_STEP, Math.round(value / SIZE_STEP) * SIZE_STEP);
+function roundToSizeStep(value: number, step = SIZE_STEP) {
+  return Math.max(step, Math.round(value / step) * step);
 }
 
-function clampDimension(value: number) {
-  return Math.min(MAX_SIZE, Math.max(MIN_SIZE, roundToSizeStep(value)));
+function clampDimension(value: number, step = SIZE_STEP) {
+  return Math.min(MAX_SIZE, Math.max(MIN_SIZE, roundToSizeStep(value, step)));
+}
+
+/**
+ * Clamp without rounding to SIZE_STEP — preserves exact pixel values
+ * typed by the user or chosen from presets (e.g. 1280x720).
+ */
+function clampDimensionExact(value: number) {
+  return Math.min(MAX_SIZE, Math.max(MIN_SIZE, value));
 }
 
 function normalizeSize(value: string) {
@@ -105,8 +71,8 @@ function parseSize(value: string) {
   }
 
   return {
-    width: clampDimension(width),
-    height: clampDimension(height),
+    width: clampDimensionExact(width),
+    height: clampDimensionExact(height),
   };
 }
 
@@ -176,6 +142,9 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
   const strictPng = modelRequiresStrictPng(model ?? "");
   const supportsMultiImage = modelLikelySupportsMultipleImages(model ?? "");
   const isEditMode = form.inputImages.length > 0;
+  const modelSizingProfile = useMemo(() => getModelSizingProfile(model ?? ""), [model]);
+  const sizePresetGroups = useMemo(() => getSizePresetGroupsForModel(model ?? ""), [model]);
+  const activeSizeStep = modelSizingProfile.mode === "gptImage2" ? 16 : SIZE_STEP;
 
   useEffect(() => {
     const parsed = parseSize(form.size);
@@ -189,6 +158,15 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
 
   const currentSize = useMemo(() => `${sliderWidth}x${sliderHeight}`, [sliderHeight, sliderWidth]);
   const currentRatioLabel = useMemo(() => getRatioLabel(currentSize), [currentSize]);
+
+  function isSizeActive(size: string) {
+    const normalizedCurrent = normalizeSize(form.size);
+    const normalizedSize = normalizeSize(size);
+    if (normalizedSize) {
+      return normalizedCurrent === normalizedSize;
+    }
+    return form.size.trim().toLowerCase() === size.trim().toLowerCase();
+  }
 
   function rememberSize(value: string) {
     const normalized = normalizeSize(value);
@@ -486,7 +464,10 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
             <p className="mt-0.5 text-xs text-slate-500">
               {t("generation.currentRatioAuto", { ratio: currentRatioLabel || "-" })}
               {" · "}
-              {t("generation.sizeStepHint", { step: SIZE_STEP })}
+              {t("generation.sizeStepHint", { step: activeSizeStep })}
+            </p>
+            <p className="mt-1 rounded-lg border border-sky-100 bg-sky-50 px-2.5 py-1.5 text-xs leading-5 text-sky-700">
+              {t(`generation.sizeCompatibility.${modelSizingProfile.mode}`)}
             </p>
           </div>
 
@@ -499,7 +480,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 type="number"
                 min={MIN_SIZE}
                 max={MAX_SIZE}
-                step={SIZE_STEP}
+                step={activeSizeStep}
                 value={sliderWidth}
                 onChange={(event) => {
                   const raw = Number(event.target.value);
@@ -507,7 +488,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                   setSliderWidth(raw);
                 }}
                 onBlur={() => {
-                  const clamped = clampDimension(sliderWidth);
+                  const clamped = clampDimensionExact(sliderWidth);
                   setSliderWidth(clamped);
                   applySize(`${clamped}x${sliderHeight}`);
                 }}
@@ -521,7 +502,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 type="number"
                 min={MIN_SIZE}
                 max={MAX_SIZE}
-                step={SIZE_STEP}
+                step={activeSizeStep}
                 value={sliderHeight}
                 onChange={(event) => {
                   const raw = Number(event.target.value);
@@ -529,7 +510,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                   setSliderHeight(raw);
                 }}
                 onBlur={() => {
-                  const clamped = clampDimension(sliderHeight);
+                  const clamped = clampDimensionExact(sliderHeight);
                   setSliderHeight(clamped);
                   applySize(`${sliderWidth}x${clamped}`);
                 }}
@@ -554,11 +535,11 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 type="range"
                 min={MIN_SIZE}
                 max={MAX_SIZE}
-                step={SIZE_STEP}
+                step={activeSizeStep}
                 value={sliderWidth}
                 className="w-full accent-sky-500"
                 onChange={(event) => {
-                  const nextWidth = clampDimension(Number(event.target.value));
+                  const nextWidth = clampDimension(Number(event.target.value), activeSizeStep);
                   setSliderWidth(nextWidth);
                   applySize(`${nextWidth}x${sliderHeight}`);
                 }}
@@ -570,11 +551,11 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 type="range"
                 min={MIN_SIZE}
                 max={MAX_SIZE}
-                step={SIZE_STEP}
+                step={activeSizeStep}
                 value={sliderHeight}
                 className="w-full accent-sky-500"
                 onChange={(event) => {
-                  const nextHeight = clampDimension(Number(event.target.value));
+                  const nextHeight = clampDimension(Number(event.target.value), activeSizeStep);
                   setSliderHeight(nextHeight);
                   applySize(`${sliderWidth}x${nextHeight}`);
                 }}
@@ -590,7 +571,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 {Array.from(new Map(form.inputImages.map((img) => [`${img.width}x${img.height}`, img])).values()).map(
                   (img) => {
                     const sizeStr = `${img.width}x${img.height}`;
-                    const isActive = normalizeSize(form.size) === normalizeSize(sizeStr);
+                    const isActive = isSizeActive(sizeStr);
                     return (
                       <button
                         key={sizeStr}
@@ -619,7 +600,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
           <p className="mt-1 text-xs text-slate-500">{t("generation.commonSizesHint")}</p>
 
           <div className="mt-2 space-y-2">
-            {COMMON_SIZE_GROUPS.map((group) => (
+            {sizePresetGroups.map((group) => (
               <div key={group.ratio}>
                 <p className="mb-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                   {group.ratio}
@@ -630,7 +611,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                       key={size}
                       type="button"
                       className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
-                        normalizeSize(form.size) === normalizeSize(size)
+                        isSizeActive(size)
                           ? "border-emerald-400 bg-emerald-50 text-emerald-700"
                           : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                       }`}
@@ -655,7 +636,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                   key={size}
                   type="button"
                   className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                    normalizeSize(form.size) === normalizeSize(size)
+                    isSizeActive(size)
                       ? "border-amber-400 bg-amber-50 text-amber-700"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                   }`}

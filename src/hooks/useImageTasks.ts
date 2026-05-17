@@ -10,6 +10,7 @@ import {
   type CachedImageRecord,
 } from "../lib/imageCache";
 import { toFriendlyError } from "../lib/errors";
+import { buildCompatibleImageRequest } from "../lib/imageSizing";
 import { loadTasks, saveTasks } from "../lib/storage";
 import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask } from "../types";
 
@@ -358,6 +359,13 @@ export function useImageTasks(settings: AppSettings) {
     const count = Math.max(1, Math.floor(form.count || 1));
     const now = Date.now();
     const currentSettings = settingsRef.current;
+    const model = currentSettings.model.trim();
+    const compatibleRequest = buildCompatibleImageRequest({
+      model,
+      prompt: form.prompt,
+      size: form.size,
+      extraParams,
+    });
     const inputImageFiles = form.inputImages.map((item) => item.file);
     const maskFile = form.maskImage?.file ?? null;
     const isEdit = inputImageFiles.length > 0;
@@ -373,13 +381,13 @@ export function useImageTasks(settings: AppSettings) {
       return {
         id,
         mode: isEdit ? "edit" : "generate",
-        prompt: form.prompt.trim(),
-        model: currentSettings.model.trim(),
-        size: form.size.trim(),
+        prompt: compatibleRequest.prompt,
+        model,
+        size: compatibleRequest.size,
         responseFormat: currentSettings.responseFormat,
         status: "pending",
         createdAt: now + index,
-        extraParams,
+        extraParams: compatibleRequest.extraParams,
         inputImageCount: isEdit ? inputImageFiles.length : undefined,
         hasMask: isEdit && maskFile ? true : undefined,
       };
