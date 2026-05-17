@@ -155,12 +155,19 @@ export function useImageTasks(settings: AppSettings) {
           }
 
           const source = imageSourceFromTask(task);
+          // Prefer b64Json (never expires) for recovery; fall back to remote URL.
+          const recoverableSource =
+            task.b64Json
+              ? `data:image/png;base64,${task.b64Json}`
+              : source && (isDataUrl(source) || isRemoteImageUrl(source))
+                ? source
+                : null;
 
-          if (!source || (!isDataUrl(source) && !isRemoteImageUrl(source))) {
+          if (!recoverableSource) {
             continue;
           }
 
-          const cached = await cacheImageFromUrl(task.id, source, {
+          const cached = await cacheImageFromUrl(task.id, recoverableSource, {
             prompt: task.prompt,
             model: task.model,
             generationSize: task.size,
@@ -306,7 +313,9 @@ export function useImageTasks(settings: AppSettings) {
                     ...item,
                     status: "success",
                     imageUrl: cachedImage.imageUrl,
-                    b64Json: undefined,
+                    // Keep b64Json around when caching failed — it serves as a
+                    // fallback source for the visibilitychange recovery path.
+                    b64Json: cachedImage.imageCached ? undefined : result.b64Json,
                     imageCached: cachedImage.imageCached,
                     imageMimeType: cachedImage.imageMimeType,
                     imageSize: cachedImage.imageSize,
@@ -369,33 +378,48 @@ export function useImageTasks(settings: AppSettings) {
 
       void refreshCacheStats();
 
-      // Look for completed tasks whose images haven't been cached yet and that
-      // still carry a cacheable image source (data URL or remote URL).
+      // Look for completed tasks whose images haven't been cached yet.
+      // This includes tasks with blob: URLs (image is in memory but IndexedDB
+      // write failed earlier), data: URLs, and remote URLs.
       for (const task of tasksRef.current) {
         if (task.status !== "success" || task.imageCached) {
           continue;
         }
 
-        const source = imageSourceFromTask(task);
+        // Build a prioritized list of sources to try. Prefer b64Json (local,
+        // never expires) over blob: URLs (in-memory, valid for this session)
+        // over remote URLs (may have expired).
+        const sources: string[] = [];
 
-        if (!source || isBlobUrl(source)) {
+        if (task.b64Json) {
+          sources.push(`data:image/png;base64,${task.b64Json}`);
+        }
+
+        if (task.imageUrl) {
+          sources.push(task.imageUrl);
+        }
+
+        if (sources.length === 0) {
           continue;
         }
 
         void (async () => {
-          try {
-            const cached = await cacheImageFromUrl(task.id, source, {
-              prompt: task.prompt,
-              model: task.model,
-              generationSize: task.size,
-              responseFormat: task.responseFormat,
-              taskCreatedAt: task.createdAt,
-            });
+          for (const source of sources) {
+            try {
+              const cached = await cacheImageFromUrl(task.id, source, {
+                prompt: task.prompt,
+                model: task.model,
+                generationSize: task.size,
+                responseFormat: task.responseFormat,
+                taskCreatedAt: task.createdAt,
+              });
 
-            attachCachedImage(task.id, cached);
-            await refreshCacheStats();
-          } catch (error) {
-            console.warn("[openai-image-webui] Visibility-change recovery failed for task", task.id, error);
+              attachCachedImage(task.id, cached);
+              await refreshCacheStats();
+              return; // success — stop trying
+            } catch (error) {
+              console.warn("[openai-image-webui] Visibility-change recovery attempt failed for task", task.id, source.slice(0, 60), error);
+            }
           }
         })();
       }

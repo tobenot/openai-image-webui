@@ -115,7 +115,7 @@ export function loadTasks(): ImageTask[] {
 }
 
 function toPersistedTask(task: ImageTask): ImageTask {
-  const { b64Json: _b64Json, raw: _raw, ...persisted } = task;
+  const { raw: _raw, ...persisted } = task;
 
   if (
     persisted.imageCached ||
@@ -130,7 +130,13 @@ function toPersistedTask(task: ImageTask): ImageTask {
     };
   }
 
-  return persisted;
+  // When the image was NOT cached (e.g. IndexedDB write failed while tab was
+  // in the background), keep b64Json so the next session can still recover it.
+  // b64Json is large but losing the image entirely is worse.
+  return {
+    ...persisted,
+    raw: undefined,
+  };
 }
 
 export function saveTasks(tasks: ImageTask[]) {
