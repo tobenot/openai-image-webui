@@ -8,7 +8,7 @@ import {
   modelRequiresStrictPng,
   prepareInputImage,
 } from "../lib/imageInput";
-import { GENERAL_SIZE_GROUPS, getModelSizingProfile, getSizePresetGroupsForModel } from "../lib/imageSizing";
+import { getModelSizingProfile, getSizePresetGroupsForModel } from "../lib/imageSizing";
 import { Notice } from "./Notice";
 
 const SIZE_STEP = 64;
@@ -144,7 +144,8 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
   const isEditMode = form.inputImages.length > 0;
   const modelSizingProfile = useMemo(() => getModelSizingProfile(model ?? ""), [model]);
   const sizePresetGroups = useMemo(() => getSizePresetGroupsForModel(model ?? ""), [model]);
-  const activeSizeStep = modelSizingProfile.mode === "gptImage2" ? 16 : SIZE_STEP;
+  // gpt-image-2: 16px alignment required; gemini: free input (only aspect_ratio matters); others: 64px slider step (cosmetic)
+  const sliderStep = modelSizingProfile.mode === "gptImage2" ? 16 : modelSizingProfile.mode === "geminiAspect" ? 8 : SIZE_STEP;
 
   useEffect(() => {
     const parsed = parseSize(form.size);
@@ -464,7 +465,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
             <p className="mt-0.5 text-xs text-slate-500">
               {t("generation.currentRatioAuto", { ratio: currentRatioLabel || "-" })}
               {" · "}
-              {t("generation.sizeStepHint", { step: activeSizeStep })}
+              {t("generation.sizeStepHint", { step: sliderStep })}
             </p>
             <p className="mt-1 rounded-lg border border-sky-100 bg-sky-50 px-2.5 py-1.5 text-xs leading-5 text-sky-700">
               {t(`generation.sizeCompatibility.${modelSizingProfile.mode}`)}
@@ -480,7 +481,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 type="number"
                 min={MIN_SIZE}
                 max={MAX_SIZE}
-                step={activeSizeStep}
+                step="any"
                 value={sliderWidth}
                 onChange={(event) => {
                   const raw = Number(event.target.value);
@@ -502,7 +503,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 type="number"
                 min={MIN_SIZE}
                 max={MAX_SIZE}
-                step={activeSizeStep}
+                step="any"
                 value={sliderHeight}
                 onChange={(event) => {
                   const raw = Number(event.target.value);
@@ -535,11 +536,11 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 type="range"
                 min={MIN_SIZE}
                 max={MAX_SIZE}
-                step={activeSizeStep}
+                step={sliderStep}
                 value={sliderWidth}
                 className="w-full accent-sky-500"
                 onChange={(event) => {
-                  const nextWidth = clampDimension(Number(event.target.value), activeSizeStep);
+                  const nextWidth = clampDimension(Number(event.target.value), sliderStep);
                   setSliderWidth(nextWidth);
                   applySize(`${nextWidth}x${sliderHeight}`);
                 }}
@@ -551,11 +552,11 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 type="range"
                 min={MIN_SIZE}
                 max={MAX_SIZE}
-                step={activeSizeStep}
+                step={sliderStep}
                 value={sliderHeight}
                 className="w-full accent-sky-500"
                 onChange={(event) => {
-                  const nextHeight = clampDimension(Number(event.target.value), activeSizeStep);
+                  const nextHeight = clampDimension(Number(event.target.value), sliderStep);
                   setSliderHeight(nextHeight);
                   applySize(`${sliderWidth}x${nextHeight}`);
                 }}
