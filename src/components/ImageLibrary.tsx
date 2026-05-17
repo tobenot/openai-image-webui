@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listCachedImages, type CachedImageRecord } from "../lib/imageCache";
 import { copyText, downloadImage } from "../lib/download";
-import type { ImageCacheStats } from "../types";
+import type { ImageCacheStats, ReuseParamsPayload } from "../types";
 import { ImageCacheSummary } from "./ImageCacheSummary";
 
 const PAGE_SIZE = 50;
@@ -20,6 +20,7 @@ interface ImageLibraryProps {
   onPreview: (imageUrl: string) => void;
   onDeleteImage: (id: string) => void;
   onClearImageCache: () => void;
+  onReuseParams: (payload: ReuseParamsPayload) => void;
 }
 
 function formatBytes(value: number) {
@@ -42,7 +43,7 @@ function getColumnCount(width: number) {
   return Math.max(1, Math.floor((width + GRID_GAP) / (CARD_MIN_WIDTH + GRID_GAP)));
 }
 
-export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCache }: ImageLibraryProps) {
+export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCache, onReuseParams }: ImageLibraryProps) {
   const { t } = useTranslation();
   const [items, setItems] = useState<LibraryImage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -222,6 +223,18 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
     setMessageKey("library.messages.cacheCleared");
   }
 
+  function handleReuseFromLibrary(item: LibraryImage) {
+    const payload: ReuseParamsPayload = {
+      model: item.model || "",
+      prompt: item.prompt || "",
+      size: item.generationSize || "1024x1024",
+      responseFormat: (item.responseFormat as "url" | "b64_json") || "b64_json",
+      // Library images never have in-memory references
+      inputImagesLost: false,
+    };
+    onReuseParams(payload);
+  }
+
   function renderCard(item: LibraryImage) {
     return (
       <article key={item.id} className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -278,6 +291,13 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
               onClick={() => void handleCopyPrompt(item)}
             >
               {t("tasks.actions.copyPrompt")}
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+              onClick={() => handleReuseFromLibrary(item)}
+            >
+              {t("tasks.actions.reuseParams")}
             </button>
             <button
               type="button"

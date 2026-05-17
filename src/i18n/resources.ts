@@ -176,6 +176,7 @@ export const resources = {
           copyPrompt: "Copy prompt",
           copyDebug: "Copy debug JSON",
           deleteImageCache: "Delete image cache",
+          reuseParams: "Reuse params",
           retry: "Retry",
           cancel: "Cancel",
           delete: "Delete",
@@ -202,6 +203,9 @@ export const resources = {
           inputImageInvalid: "Invalid input image: {{reason}}",
           maskMismatch:
             "Mask dimensions do not match the first image. They must be identical.",
+          paramsApplied: "Parameters applied.",
+          paramsAppliedInputsLost:
+            "Parameters applied. Reference images are no longer available — please re-upload if needed.",
         },
 
       },
@@ -396,6 +400,7 @@ export const resources = {
           copyPrompt: "复制提示词",
           copyDebug: "复制调试 JSON",
           deleteImageCache: "删除图片缓存",
+          reuseParams: "使用此参数",
           retry: "重试",
           cancel: "取消",
           delete: "删除",
@@ -420,6 +425,9 @@ export const resources = {
           editInputsDropped: "输入图片已从内存释放，请重新上传后再重试编辑任务。",
           inputImageInvalid: "输入图片不合法：{{reason}}",
           maskMismatch: "Mask 尺寸与首张图不一致，两者尺寸必须完全相同。",
+          paramsApplied: "参数已填入。",
+          paramsAppliedInputsLost:
+            "参数已填入。参考图片已失效，如需编辑模式请重新上传。",
         },
 
       },

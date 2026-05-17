@@ -13,7 +13,7 @@ import { useSettings } from "./hooks/useSettings";
 import { toFriendlyError } from "./lib/errors";
 import { parseAdvancedJson } from "./lib/parseAdvancedJson";
 import { DEFAULT_FORM } from "./lib/storage";
-import type { AppSettings, GenerateFormState } from "./types";
+import type { AppSettings, GenerateFormState, ImageTask, InputImageFile, ReuseParamsPayload } from "./types";
 
 function validateRequest(
   settings: AppSettings,
@@ -71,10 +71,19 @@ export default function App() {
     clearTaskImage,
     clearCachedImages,
     clearTasks,
+    getPendingInputs,
   } = useImageTasks(settings);
 
+  const [toast, setToast] = useState<string>("");
 
   const closePreview = useCallback(() => setPreviewUrl(null), []);
+
+  // Auto-dismiss toast after 3 seconds
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   useEffect(() => {
     const language = i18n.resolvedLanguage?.startsWith("zh") ? "zh-CN" : "en";
@@ -87,6 +96,81 @@ export default function App() {
 
   function updateForm(next: Partial<GenerateFormState>) {
     setForm((current) => ({ ...current, ...next }));
+  }
+
+  function handleReuseParams(payload: ReuseParamsPayload) {
+    // Update settings (model + responseFormat)
+    setSettings({
+      model: payload.model,
+      responseFormat: payload.responseFormat,
+    });
+
+    // Update form (prompt + size + advancedJson + inputImages + maskImage)
+    setForm({
+      prompt: payload.prompt,
+      count: 1,
+      size: payload.size,
+      advancedJson: payload.extraParams && Object.keys(payload.extraParams).length > 0
+        ? JSON.stringify(payload.extraParams, null, 2)
+        : "",
+      inputImages: payload.inputImages ?? [],
+      maskImage: payload.maskImage ?? null,
+    });
+
+    // Switch to tasks panel so the user can see the form
+    setActivePanel("tasks");
+    setFormError("");
+
+    // Show toast
+    if (payload.inputImagesLost) {
+      setToast(t("tasks.messages.paramsAppliedInputsLost"));
+    } else {
+      setToast(t("tasks.messages.paramsApplied"));
+    }
+  }
+
+  /** Build a ReuseParamsPayload from an ImageTask, checking in-memory inputs. */
+  function buildReusePayloadFromTask(task: ImageTask): ReuseParamsPayload {
+    const pending = getPendingInputs(task.id);
+    const isEdit = task.mode === "edit";
+    const hasInputs = isEdit && pending && pending.images.length > 0;
+
+    // If the task was an edit but inputs are gone, mark them as lost
+    const inputImagesLost = isEdit && !hasInputs;
+
+    // Convert File blobs back to InputImageFile format for the form
+    let inputImages: InputImageFile[] | undefined;
+    let maskImage: InputImageFile | null | undefined;
+
+    if (hasInputs && pending) {
+      inputImages = pending.images.map((file) => ({
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        width: 0,
+        height: 0,
+      }));
+      maskImage = pending.mask
+        ? {
+            id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            file: pending.mask,
+            previewUrl: URL.createObjectURL(pending.mask),
+            width: 0,
+            height: 0,
+          }
+        : null;
+    }
+
+    return {
+      model: task.model,
+      prompt: task.prompt,
+      size: task.size,
+      responseFormat: task.responseFormat,
+      extraParams: task.extraParams,
+      inputImages,
+      maskImage,
+      inputImagesLost,
+    };
   }
 
   function handleGenerate() {
@@ -162,6 +246,7 @@ export default function App() {
                 onCancel={cancelTask}
                 onRemove={removeTask}
                 onClearTaskImage={clearTaskImage}
+                onReuseParams={(task) => handleReuseParams(buildReusePayloadFromTask(task))}
               />
             ) : (
               <ImageLibrary
@@ -169,6 +254,7 @@ export default function App() {
                 onPreview={setPreviewUrl}
                 onDeleteImage={clearTaskImage}
                 onClearImageCache={clearCachedImages}
+                onReuseParams={(payload) => handleReuseParams(payload)}
               />
             )}
 
@@ -178,6 +264,13 @@ export default function App() {
       </div>
 
       <ImagePreviewModal imageUrl={previewUrl} onClose={closePreview} />
+
+      {/* Toast notification */}
+      {toast ? (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 animate-fade-in rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-medium text-emerald-700 shadow-lg">
+          {toast}
+        </div>
+      ) : null}
     </div>
   );
 }

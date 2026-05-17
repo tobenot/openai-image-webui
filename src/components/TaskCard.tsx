@@ -10,6 +10,7 @@ interface TaskCardProps {
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
   onClearImage: (id: string) => void;
+  onReuseParams: (task: ImageTask) => void;
 }
 
 const statusStyles: Record<ImageTask["status"], string> = {
@@ -62,7 +63,7 @@ function formatTaskDebug(task: ImageTask, errorText: string) {
   );
 }
 
-export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClearImage }: TaskCardProps) {
+export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClearImage, onReuseParams }: TaskCardProps) {
   const { t } = useTranslation();
   const [messageKey, setMessageKey] = useState<string>("");
   const hasImage = Boolean(task.imageUrl);
@@ -246,6 +247,13 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClear
               onClick={handleClearImage}
             >
               {t("tasks.actions.deleteImageCache")}
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+              onClick={() => onReuseParams(task)}
+            >
+              {t("tasks.actions.reuseParams")}
             </button>
             <button type="button" className={actionButtonClass()} onClick={() => onRetry(task.id)}>
               {t("tasks.actions.retry")}

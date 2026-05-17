@@ -11,6 +11,7 @@ interface TaskQueueProps {
   onCancel: (id: string) => void;
   onRemove: (id: string) => void;
   onClearTaskImage: (id: string) => void;
+  onReuseParams: (task: ImageTask) => void;
 }
 
 export function TaskQueue({
@@ -20,6 +21,7 @@ export function TaskQueue({
   onCancel,
   onRemove,
   onClearTaskImage,
+  onReuseParams,
 }: TaskQueueProps) {
   const { t } = useTranslation();
   const stats = {
@@ -65,6 +67,7 @@ export function TaskQueue({
               onCancel={onCancel}
               onRemove={onRemove}
               onClearImage={onClearTaskImage}
+              onReuseParams={onReuseParams}
             />
           ))}
         </div>

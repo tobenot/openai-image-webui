@@ -84,6 +84,19 @@ export interface ImageCacheStats {
 }
 
 
+export interface ReuseParamsPayload {
+  model: string;
+  prompt: string;
+  size: string;
+  responseFormat: ImageResponseFormat;
+  extraParams?: Record<string, unknown>;
+  /** Only available when File blobs are still in memory. */
+  inputImages?: InputImageFile[];
+  maskImage?: InputImageFile | null;
+  /** True when the task was an edit but the reference images have been lost. */
+  inputImagesLost?: boolean;
+}
+
 export interface GenerateImageParams {
 
   apiKey: string;

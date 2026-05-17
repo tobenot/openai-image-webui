@@ -633,5 +633,7 @@ export function useImageTasks(settings: AppSettings) {
     clearTaskImage,
     clearCachedImages,
     clearTasks,
+    /** Check whether in-memory edit inputs still exist for a task. */
+    getPendingInputs: (id: string) => pendingInputsRef.current.get(id) ?? null,
   };
 }
