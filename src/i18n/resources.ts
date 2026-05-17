@@ -82,10 +82,12 @@ export const resources = {
         commonSizes: "Common sizes",
 
 
-        commonSizesHint: "Ordered as portrait → square → landscape.",
+        commonSizesHint: "Grouped by aspect ratio for easier selection.",
         recentSizes: "Recent sizes",
         recentSizesEmpty: "No recent sizes yet. Pick a preset or enter one manually.",
         recommendedSize: "Suggested size: {{size}}",
+        refImageSize: "Reference image resolution",
+        refImageSizeHint: "Use this image's native resolution for pixel-perfect editing.",
 
         quality: {
           "1k": "1K",
@@ -290,11 +292,13 @@ export const resources = {
         sizePlaceholder: "例如：1024x1536",
         quickSizePreset: "快捷尺寸（比例 + 清晰度）",
         commonSizes: "常用分辨率",
-        commonSizesHint: "已按竖图 → 方图 → 横图排序。",
+        commonSizesHint: "按比例分组，方便快速选择。",
         recentSizes: "最近使用",
 
         recentSizesEmpty: "还没有最近使用的尺寸。你可以先点一个预设，或手动输入。",
         recommendedSize: "建议尺寸：{{size}}",
+        refImageSize: "参考图原始分辨率",
+        refImageSizeHint: "使用参考图的原始分辨率，精确修图。",
         quality: {
           "1k": "1K",
           "2k": "2K",

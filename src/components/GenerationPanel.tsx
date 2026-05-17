@@ -17,21 +17,51 @@ const DEFAULT_SIZE = 1024;
 const RECENT_SIZE_LIMIT = 6;
 const RECENT_SIZE_STORAGE_KEY = "openai-image-webui:recent-sizes";
 
-const COMMON_SIZE_OPTIONS = [
-  "512x768",
-  "768x1024",
-  "1024x1536",
-  "1536x2048",
-  "512x512",
-  "768x768",
-  "1024x1024",
-  "1536x1536",
-  "2048x2048",
-  "768x512",
-  "1024x768",
-  "1536x1024",
-  "2048x1536",
+/**
+ * Common sizes grouped by aspect ratio.
+ * Each group has a label (ratio) and a list of resolutions in ascending order.
+ */
+const COMMON_SIZE_GROUPS = [
+  {
+    ratio: "1:1",
+    sizes: ["512x512", "768x768", "1024x1024", "1536x1536", "2048x2048"],
+  },
+  {
+    ratio: "4:3",
+    sizes: ["768x576", "1024x768", "1536x1152", "2048x1536"],
+  },
+  {
+    ratio: "3:4",
+    sizes: ["576x768", "768x1024", "1152x1536", "1536x2048"],
+  },
+  {
+    ratio: "3:2",
+    sizes: ["768x512", "1024x768", "1536x1024", "2048x1360"],
+  },
+  {
+    ratio: "2:3",
+    sizes: ["512x768", "768x1024", "1024x1536", "1360x2048"],
+  },
+  {
+    ratio: "16:9",
+    sizes: ["1024x576", "1280x720", "1536x864", "1920x1088", "2560x1472"],
+  },
+  {
+    ratio: "9:16",
+    sizes: ["576x1024", "720x1280", "864x1536", "1088x1920", "1472x2560"],
+  },
+  {
+    ratio: "21:9",
+    sizes: ["1344x576", "1792x768", "2688x1152"],
+  },
+  {
+    ratio: "9:21",
+    sizes: ["576x1344", "768x1792", "1152x2688"],
+  },
 ] as const;
+
+/** Flat list for backwards-compatible checks */
+const COMMON_SIZE_OPTIONS = COMMON_SIZE_GROUPS.flatMap((g) => g.sizes);
 
 interface GenerationPanelProps {
   form: GenerateFormState;
@@ -213,7 +243,21 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
       }
     }
     if (prepared.length === 0) return;
-    onChange({ inputImages: [...form.inputImages, ...prepared] });
+
+    // If this is the first input image being added, auto-fill size with the
+    // image's native resolution so the user gets pixel-perfect defaults.
+    const isFirstImage = form.inputImages.length === 0;
+    const updates: Partial<GenerateFormState> = {
+      inputImages: [...form.inputImages, ...prepared],
+    };
+    if (isFirstImage && prepared[0]) {
+      const nativeSize = `${prepared[0].width}x${prepared[0].height}`;
+      updates.size = nativeSize;
+      setSliderWidth(prepared[0].width);
+      setSliderHeight(prepared[0].height);
+      rememberSize(nativeSize);
+    }
+    onChange(updates);
   }
 
   async function handleAddMask(file: File) {
@@ -420,44 +464,90 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
           ) : null}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">
-              {t("generation.imageCount")}
-            </span>
-            <input
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-              type="number"
-              min={1}
-              max={20}
-              value={form.count}
-              onChange={(event) => onChange({ count: Number(event.target.value) })}
-            />
-          </label>
+        {/* Image count */}
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-slate-700">
+            {t("generation.imageCount")}
+          </span>
+          <input
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+            type="number"
+            min={1}
+            max={20}
+            value={form.count}
+            onChange={(event) => onChange({ count: Number(event.target.value) })}
+          />
+        </label>
 
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">
-              {t("generation.size")}
-            </span>
-            <input
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-              placeholder={t("generation.sizePlaceholder")}
-              value={form.size}
-              onChange={(event) => onChange({ size: event.target.value })}
-              onBlur={() => applySize(form.size)}
-            />
-          </label>
-        </div>
+        {/* --- Size section --- */}
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 space-y-3">
+          <div>
+            <p className="text-sm font-medium text-slate-700">{t("generation.size")}</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {t("generation.currentRatioAuto", { ratio: currentRatioLabel || "-" })}
+              {" · "}
+              {t("generation.sizeStepHint", { step: SIZE_STEP })}
+            </p>
+          </div>
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-          <p className="text-xs font-medium text-slate-600">{t("generation.resolutionSlider")}</p>
-          <p className="mt-1 text-xs text-slate-500">{t("generation.currentSize", { size: currentSize })}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {t("generation.currentRatioAuto", { ratio: currentRatioLabel || "-" })}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">{t("generation.sizeStepHint", { step: SIZE_STEP })}</p>
+          {/* Free width × height number inputs */}
+          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">{t("generation.widthPixels")}</span>
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                type="number"
+                min={MIN_SIZE}
+                max={MAX_SIZE}
+                step={SIZE_STEP}
+                value={sliderWidth}
+                onChange={(event) => {
+                  const raw = Number(event.target.value);
+                  if (!Number.isFinite(raw) || raw <= 0) return;
+                  setSliderWidth(raw);
+                }}
+                onBlur={() => {
+                  const clamped = clampDimension(sliderWidth);
+                  setSliderWidth(clamped);
+                  applySize(`${clamped}x${sliderHeight}`);
+                }}
+              />
+            </label>
+            <span className="pb-2 text-sm font-medium text-slate-400">×</span>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">{t("generation.heightPixels")}</span>
+              <input
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tabular-nums outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                type="number"
+                min={MIN_SIZE}
+                max={MAX_SIZE}
+                step={SIZE_STEP}
+                value={sliderHeight}
+                onChange={(event) => {
+                  const raw = Number(event.target.value);
+                  if (!Number.isFinite(raw) || raw <= 0) return;
+                  setSliderHeight(raw);
+                }}
+                onBlur={() => {
+                  const clamped = clampDimension(sliderHeight);
+                  setSliderHeight(clamped);
+                  applySize(`${sliderWidth}x${clamped}`);
+                }}
+              />
+            </label>
+          </div>
 
-          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          {/* Text fallback — same as before but smaller, for pasting arbitrary "WxH" */}
+          <input
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+            placeholder={t("generation.sizePlaceholder")}
+            value={form.size}
+            onChange={(event) => onChange({ size: event.target.value })}
+            onBlur={() => applySize(form.size)}
+          />
+
+          {/* Sliders */}
+          <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-xs text-slate-600">
               <span className="mb-1 block">{t("generation.widthPixels")}: {sliderWidth}</span>
               <input
@@ -466,7 +556,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 max={MAX_SIZE}
                 step={SIZE_STEP}
                 value={sliderWidth}
-                className="w-full"
+                className="w-full accent-sky-500"
                 onChange={(event) => {
                   const nextWidth = clampDimension(Number(event.target.value));
                   setSliderWidth(nextWidth);
@@ -474,7 +564,6 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 }}
               />
             </label>
-
             <label className="block text-xs text-slate-600">
               <span className="mb-1 block">{t("generation.heightPixels")}: {sliderHeight}</span>
               <input
@@ -483,7 +572,7 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
                 max={MAX_SIZE}
                 step={SIZE_STEP}
                 value={sliderHeight}
-                className="w-full"
+                className="w-full accent-sky-500"
                 onChange={(event) => {
                   const nextHeight = clampDimension(Number(event.target.value));
                   setSliderHeight(nextHeight);
@@ -492,29 +581,71 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
               />
             </label>
           </div>
+
+          {/* Reference image native resolution button */}
+          {form.inputImages.length > 0 ? (
+            <div>
+              <p className="text-xs font-medium text-slate-600">{t("generation.refImageSize")}</p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                {Array.from(new Map(form.inputImages.map((img) => [`${img.width}x${img.height}`, img])).values()).map(
+                  (img) => {
+                    const sizeStr = `${img.width}x${img.height}`;
+                    const isActive = normalizeSize(form.size) === normalizeSize(sizeStr);
+                    return (
+                      <button
+                        key={sizeStr}
+                        type="button"
+                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                          isActive
+                            ? "border-violet-400 bg-violet-50 text-violet-700"
+                            : "border-violet-200 bg-white text-violet-600 hover:bg-violet-50"
+                        }`}
+                        onClick={() => applySize(sizeStr)}
+                        title={t("generation.refImageSizeHint")}
+                      >
+                        📐 {sizeStr} · {getRatioLabel(sizeStr)}
+                      </button>
+                    );
+                  },
+                )}
+              </div>
+            </div>
+          ) : null}
         </div>
 
+        {/* Common sizes grouped by aspect ratio */}
         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           <p className="text-xs font-medium text-slate-600">{t("generation.commonSizes")}</p>
           <p className="mt-1 text-xs text-slate-500">{t("generation.commonSizesHint")}</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {COMMON_SIZE_OPTIONS.map((size) => (
-              <button
-                key={size}
-                type="button"
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                  normalizeSize(form.size) === normalizeSize(size)
-                    ? "border-emerald-400 bg-emerald-50 text-emerald-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
-                onClick={() => applySize(size)}
-              >
-                {size} · {getRatioLabel(size)}
-              </button>
+
+          <div className="mt-2 space-y-2">
+            {COMMON_SIZE_GROUPS.map((group) => (
+              <div key={group.ratio}>
+                <p className="mb-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                  {group.ratio}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.sizes.map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                        normalizeSize(form.size) === normalizeSize(size)
+                          ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                      onClick={() => applySize(size)}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>
 
+        {/* Recent sizes */}
         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
           <p className="text-xs font-medium text-slate-600">{t("generation.recentSizes")}</p>
           {recentSizes.length > 0 ? (
