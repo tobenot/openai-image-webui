@@ -185,41 +185,53 @@ export function useImageTasks(settings: AppSettings) {
   }, [attachCachedImage, refreshCacheStats]);
 
   const cacheGeneratedImage = useCallback(
-    async (task: ImageTask, imageUrl: string, signal: AbortSignal) => {
-      try {
-        const cached = await cacheImageFromUrl(
-          task.id,
-          imageUrl,
-          {
-            prompt: task.prompt,
-            model: task.model,
-            generationSize: task.size,
-            responseFormat: task.responseFormat,
-            taskCreatedAt: task.createdAt,
-          },
-          signal,
-        );
+    async (task: ImageTask, imageUrl: string, b64Json: string | undefined, signal: AbortSignal) => {
+      const metadata = {
+        prompt: task.prompt,
+        model: task.model,
+        generationSize: task.size,
+        responseFormat: task.responseFormat,
+        taskCreatedAt: task.createdAt,
+      };
 
-        await refreshCacheStats();
-        return {
-          imageUrl: createObjectUrl(cached.blob),
-          imageCached: true,
-          imageMimeType: cached.mimeType,
-          imageSize: cached.size,
-        };
-      } catch (error) {
-        if (signal.aborted) {
-          throw error;
-        }
+      // Try caching from the primary imageUrl first. If it fails (e.g. the
+      // remote URL expired while the tab was in the background) and we have a
+      // b64_json fallback, try again with the data URL.
+      const urlsToTry = [imageUrl];
 
-        console.warn("[openai-image-webui] Failed to cache generated image", error);
-        return {
-          imageUrl,
-          imageCached: false,
-          imageMimeType: undefined,
-          imageSize: undefined,
-        };
+      if (b64Json && !imageUrl.startsWith("data:")) {
+        urlsToTry.push(`data:image/png;base64,${b64Json}`);
       }
+
+      let lastError: unknown;
+
+      for (const url of urlsToTry) {
+        try {
+          const cached = await cacheImageFromUrl(task.id, url, metadata, signal);
+          await refreshCacheStats();
+          return {
+            imageUrl: createObjectUrl(cached.blob),
+            imageCached: true,
+            imageMimeType: cached.mimeType,
+            imageSize: cached.size,
+          };
+        } catch (error) {
+          if (signal.aborted) {
+            throw error;
+          }
+
+          lastError = error;
+          console.warn("[openai-image-webui] Cache attempt failed for", url, error);
+        }
+      }
+
+      console.warn("[openai-image-webui] Failed to cache generated image (all attempts)", lastError);
+      return {
+        imageUrl,
+        imageCached: false,
+        imageMimeType: undefined,
+        imageSize: undefined,
+      };
     },
     [createObjectUrl, refreshCacheStats],
   );
@@ -284,7 +296,7 @@ export function useImageTasks(settings: AppSettings) {
                 extraParams: task.extraParams,
                 signal: controller.signal,
               });
-          const cachedImage = await cacheGeneratedImage(task, result.imageUrl, controller.signal);
+          const cachedImage = await cacheGeneratedImage(task, result.imageUrl, result.b64Json, controller.signal);
 
 
           setTasks((current) =>
@@ -344,6 +356,54 @@ export function useImageTasks(settings: AppSettings) {
       .slice(0, availableSlots)
       .forEach(startTask);
   }, [settings.concurrency, startTask, tasks]);
+
+  // When the user switches back to this tab, refresh cache stats and try to
+  // recover any tasks that finished while the tab was in the background but
+  // whose images could not be cached (e.g. because the remote URL expired
+  // before the fetch completed, or IndexedDB was temporarily unavailable).
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+
+      void refreshCacheStats();
+
+      // Look for completed tasks whose images haven't been cached yet and that
+      // still carry a cacheable image source (data URL or remote URL).
+      for (const task of tasksRef.current) {
+        if (task.status !== "success" || task.imageCached) {
+          continue;
+        }
+
+        const source = imageSourceFromTask(task);
+
+        if (!source || isBlobUrl(source)) {
+          continue;
+        }
+
+        void (async () => {
+          try {
+            const cached = await cacheImageFromUrl(task.id, source, {
+              prompt: task.prompt,
+              model: task.model,
+              generationSize: task.size,
+              responseFormat: task.responseFormat,
+              taskCreatedAt: task.createdAt,
+            });
+
+            attachCachedImage(task.id, cached);
+            await refreshCacheStats();
+          } catch (error) {
+            console.warn("[openai-image-webui] Visibility-change recovery failed for task", task.id, error);
+          }
+        })();
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [attachCachedImage, refreshCacheStats]);
 
   useEffect(() => {
     return () => {

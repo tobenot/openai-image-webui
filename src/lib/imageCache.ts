@@ -38,7 +38,7 @@ function openDb(): Promise<IDBDatabase> {
     return dbPromise;
   }
 
-  dbPromise = new Promise((resolve, reject) => {
+  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = () => {
@@ -56,27 +56,68 @@ function openDb(): Promise<IDBDatabase> {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Failed to open IndexedDB."));
+    request.onsuccess = () => {
+      const db = request.result;
+
+      // If the browser closes the connection behind our back (e.g. when the
+      // tab is in the background for a long time), clear the cached promise so
+      // the next call will re-open the database automatically.
+      db.onclose = () => {
+        dbPromise = null;
+      };
+
+      resolve(db);
+    };
+    request.onerror = () => {
+      // Clear the cached promise so the next attempt can retry.
+      dbPromise = null;
+      reject(request.error ?? new Error("Failed to open IndexedDB."));
+    };
   });
 
   return dbPromise;
+}
+
+function runTransactionOnce<T>(
+  db: IDBDatabase,
+  mode: IDBTransactionMode,
+  run: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason?: unknown) => void) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let transaction: IDBTransaction;
+
+    try {
+      transaction = db.transaction(STORE_NAME, mode);
+    } catch (error) {
+      // The connection may have been silently closed (InvalidStateError).
+      // Clear the cached promise so the next openDb() call will reconnect.
+      dbPromise = null;
+      reject(error);
+      return;
+    }
+
+    const store = transaction.objectStore(STORE_NAME);
+
+    transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB transaction failed."));
+    run(store, resolve, reject);
+  });
 }
 
 function runTransaction<T>(
   mode: IDBTransactionMode,
   run: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason?: unknown) => void) => void,
 ): Promise<T> {
-  return openDb().then(
-    (db) =>
-      new Promise<T>((resolve, reject) => {
-        const transaction = db.transaction(STORE_NAME, mode);
-        const store = transaction.objectStore(STORE_NAME);
+  return openDb()
+    .then((db) => runTransactionOnce<T>(db, mode, run))
+    .catch((firstError) => {
+      // If the first attempt failed because the connection was stale, retry
+      // once with a fresh connection.
+      if (dbPromise === null) {
+        return openDb().then((db) => runTransactionOnce<T>(db, mode, run));
+      }
 
-        transaction.onerror = () => reject(transaction.error ?? new Error("IndexedDB transaction failed."));
-        run(store, resolve, reject);
-      }),
-  );
+      throw firstError;
+    });
 }
 
 function getMimeTypeFromDataUrl(dataUrl: string) {
