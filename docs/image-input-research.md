@@ -1,7 +1,8 @@
 # 图片作为输入 —— 标准方案调研（中间文档）
 
 > 目标：在当前这个“纯前端、BYOK、直连 OpenAI 兼容 `/v1` 端点”的项目里，把**图片当作输入**接进来。
-> 本文只做方案收敛，不做最终实现。实现阶段按本文 §6 的“推荐路线”推进即可。
+> 本文是历史调研记录。图片编辑能力已实现；后来又按产品需求补了一个独立 OCR/识图面板，走 `POST /responses`，不再沿用本文早期“Vision 输入默认不做”的结论。
+
 
 当前项目状态（事实）：
 - 入口只有一条：`POST {baseUrl}/images/generations`，`Content-Type: application/json`，body 里 `model / prompt / n / size / response_format / ...extraParams`。见 `src/api/openaiImages.ts`。

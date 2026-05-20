@@ -39,7 +39,15 @@ export async function downloadImage(imageUrl: string, filenameBase: string, mime
   }
 }
 
+export function downloadText(text: string, filenameBase: string) {
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(blob);
+  clickDownload(objectUrl, `${filenameBase}.txt`);
+  URL.revokeObjectURL(objectUrl);
+}
+
 export async function copyText(text: string) {
+
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
     return;

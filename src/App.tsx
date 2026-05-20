@@ -7,13 +7,16 @@ import { ImagePreviewModal } from "./components/ImagePreviewModal";
 import { Notice } from "./components/Notice";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TaskQueue } from "./components/TaskQueue";
+import { VisionPanel } from "./components/VisionPanel";
+
 
 import { useImageTasks } from "./hooks/useImageTasks";
 import { useSettings } from "./hooks/useSettings";
 import { toFriendlyError } from "./lib/errors";
 import { parseAdvancedJson } from "./lib/parseAdvancedJson";
-import { DEFAULT_FORM } from "./lib/storage";
-import type { AppSettings, GenerateFormState, ImageTask, InputImageFile, ReuseParamsPayload } from "./types";
+import { DEFAULT_FORM, DEFAULT_VISION_FORM } from "./lib/storage";
+import type { AppSettings, GenerateFormState, ImageTask, InputImageFile, ReuseParamsPayload, VisionFormState } from "./types";
+
 
 function validateRequest(
   settings: AppSettings,
@@ -51,13 +54,49 @@ function normalizeForm(form: GenerateFormState): GenerateFormState {
   };
 }
 
+function validateVisionRequest(
+  settings: AppSettings,
+  form: VisionFormState,
+  messages: {
+    apiKeyRequired: string;
+    apiBaseUrlRequired: string;
+    visionModelRequired: string;
+    promptRequired: string;
+    imageRequired: string;
+  },
+) {
+  if (!settings.apiKey.trim()) {
+    throw new Error(messages.apiKeyRequired);
+  }
+
+  if (!settings.baseUrl.trim()) {
+    throw new Error(messages.apiBaseUrlRequired);
+  }
+
+  if (!settings.visionModel.trim()) {
+    throw new Error(messages.visionModelRequired);
+  }
+
+  if (!form.prompt.trim()) {
+    throw new Error(messages.promptRequired);
+  }
+
+  if (form.inputImages.length === 0) {
+    throw new Error(messages.imageRequired);
+  }
+}
+
 type WorkspacePanel = "tasks" | "library";
+
 
 export default function App() {
   const { i18n, t } = useTranslation();
   const { settings, setSettings, resetSettings } = useSettings();
   const [form, setForm] = useState<GenerateFormState>(DEFAULT_FORM);
+  const [visionForm, setVisionForm] = useState<VisionFormState>(DEFAULT_VISION_FORM);
   const [formError, setFormError] = useState("");
+  const [visionError, setVisionError] = useState("");
+
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("tasks");
 
@@ -65,7 +104,9 @@ export default function App() {
     tasks,
     cacheStats,
     addTasks,
+    addVisionTask,
     retryTask,
+
     cancelTask,
     removeTask,
     clearTaskImage,
@@ -98,7 +139,12 @@ export default function App() {
     setForm((current) => ({ ...current, ...next }));
   }
 
+  function updateVisionForm(next: Partial<VisionFormState>) {
+    setVisionForm((current) => ({ ...current, ...next }));
+  }
+
   function handleReuseParams(payload: ReuseParamsPayload) {
+
     // Update settings (model + responseFormat)
     setSettings({
       model: payload.model,
@@ -143,7 +189,8 @@ export default function App() {
     let maskImage: InputImageFile | null | undefined;
 
     if (hasInputs && pending) {
-      inputImages = pending.images.map((file) => ({
+      inputImages = pending.images.map((file: File) => ({
+
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
         file,
         previewUrl: URL.createObjectURL(file),
@@ -206,7 +253,40 @@ export default function App() {
     }
   }
 
+  function handleAnalyzeImages() {
+    setVisionError("");
+
+    try {
+      const normalizedForm = {
+        ...visionForm,
+        prompt: visionForm.prompt.trim(),
+      };
+      validateVisionRequest(settings, normalizedForm, {
+        apiKeyRequired: t("errors.apiKeyRequired"),
+        apiBaseUrlRequired: t("errors.apiBaseUrlRequired"),
+        visionModelRequired: t("errors.visionModelRequired"),
+        promptRequired: t("errors.promptRequired"),
+        imageRequired: t("errors.visionImageRequired"),
+      });
+      const extraParams = parseAdvancedJson(normalizedForm.advancedJson, {
+        invalidJson: t("errors.advancedJsonInvalid"),
+        mustBeObject: t("errors.advancedJsonObject"),
+      });
+      addVisionTask(normalizedForm, extraParams);
+      setActivePanel("tasks");
+      setVisionForm((current) => ({ ...current, prompt: normalizedForm.prompt }));
+    } catch (error) {
+      setVisionError(
+        toFriendlyError(error, {
+          unknown: t("errors.unknown"),
+          requestFailed: t("errors.requestFailed"),
+        }),
+      );
+    }
+  }
+
   return (
+
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#e0f2fe,_transparent_34rem),linear-gradient(135deg,_#f8fafc,_#eef2ff)] px-4 py-6 text-slate-900 md:px-8">
       <div className="mx-auto max-w-7xl">
         <Header taskCount={tasks.length} onClearTasks={clearTasks} />
@@ -219,7 +299,9 @@ export default function App() {
 
           <div className="space-y-6">
             <GenerationPanel form={form} error={formError} model={settings.model} onChange={updateForm} onSubmit={handleGenerate} />
+            <VisionPanel form={visionForm} error={visionError} visionModel={settings.visionModel} onChange={updateVisionForm} onSubmit={handleAnalyzeImages} />
             <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
+
               <div className="grid grid-cols-2 gap-1">
                 {(["tasks", "library"] as const).map((panel) => (
                   <button

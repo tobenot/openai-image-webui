@@ -7,15 +7,19 @@ export type ImageTaskStatus =
 
 export type ImageResponseFormat = "url" | "b64_json";
 
-export type RequestMode = "generate" | "edit";
+export type RequestMode = "generate" | "edit" | "vision";
+
+export type VisionDetail = "auto" | "low" | "high";
 
 export interface AppSettings {
   apiKey: string;
   baseUrl: string;
   model: string;
+  visionModel: string;
   responseFormat: ImageResponseFormat;
   concurrency: number;
 }
+
 
 /**
  * An image the user supplied as input (reference image for edits).
@@ -38,7 +42,15 @@ export interface GenerateFormState {
   maskImage: InputImageFile | null;
 }
 
+export interface VisionFormState {
+  prompt: string;
+  advancedJson: string;
+  inputImages: InputImageFile[];
+  detail: VisionDetail;
+}
+
 export interface ImageTaskDebug {
+
   endpoint: string;
   requestBody: Record<string, unknown>;
   responseStatus?: number;
@@ -61,8 +73,10 @@ export interface ImageTask {
   imageCached?: boolean;
   imageMimeType?: string;
   imageSize?: number;
+  outputText?: string;
   error?: string;
   createdAt: number;
+
   startedAt?: number;
   finishedAt?: number;
   raw?: unknown;
@@ -74,9 +88,11 @@ export interface ImageTask {
    */
   inputImageCount?: number;
   hasMask?: boolean;
+  visionDetail?: VisionDetail;
 }
 
 export interface ImageCacheStats {
+
   count: number;
   size: number;
   warningBytes: number;
@@ -122,5 +138,25 @@ export interface GenerateImageResult {
   raw: unknown;
   debug: ImageTaskDebug;
 }
+
+export interface VisionAnalysisParams {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  prompt: string;
+  images: File[];
+  detail?: VisionDetail;
+  extraParams?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+export interface VisionAnalysisResult {
+  outputText: string;
+  raw: unknown;
+  debug: ImageTaskDebug;
+}
+
+
+
 
 

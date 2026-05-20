@@ -1,14 +1,19 @@
-import type { AppSettings, GenerateFormState, ImageTask, ImageTaskStatus } from "../types";
+import type { AppSettings, GenerateFormState, ImageTask, ImageTaskStatus, VisionFormState } from "../types";
+
 
 export const STORAGE_KEYS = {
   settings: "openai-image-webui:settings",
   tasks: "openai-image-webui:tasks",
 } as const;
 
+export const DEFAULT_VISION_PROMPT =
+  "Extract all visible text from the image as accurately and completely as possible. Preserve line breaks, reading order, tables, lists, and labels. Mark uncertain or unreadable areas clearly, then add a concise summary of important visual context.";
+
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
   baseUrl: "",
   model: import.meta.env.VITE_DEFAULT_MODEL || "gpt-image-1",
+  visionModel: import.meta.env.VITE_DEFAULT_VISION_MODEL || "gpt-4.1-mini",
   responseFormat: "url",
   concurrency: 3,
 };
@@ -21,6 +26,14 @@ export const DEFAULT_FORM: GenerateFormState = {
   inputImages: [],
   maskImage: null,
 };
+
+export const DEFAULT_VISION_FORM: VisionFormState = {
+  prompt: DEFAULT_VISION_PROMPT,
+  advancedJson: "",
+  inputImages: [],
+  detail: "high",
+};
+
 
 const TASK_STATUSES = new Set<ImageTaskStatus>([
   "pending",
@@ -52,7 +65,9 @@ export function sanitizeSettings(value: Partial<AppSettings> | null): AppSetting
     apiKey: typeof value?.apiKey === "string" ? value.apiKey : DEFAULT_SETTINGS.apiKey,
     baseUrl: typeof value?.baseUrl === "string" ? value.baseUrl : DEFAULT_SETTINGS.baseUrl,
     model: typeof value?.model === "string" ? value.model : DEFAULT_SETTINGS.model,
+    visionModel: typeof value?.visionModel === "string" ? value.visionModel : DEFAULT_SETTINGS.visionModel,
     responseFormat:
+
       value?.responseFormat === "b64_json" || value?.responseFormat === "url"
         ? value.responseFormat
         : DEFAULT_SETTINGS.responseFormat,
@@ -89,8 +104,9 @@ function restoreTask(value: Partial<ImageTask>): ImageTask | null {
   // Default them to "generate" so they keep rendering correctly.
   const migrated = {
     ...value,
-    mode: value.mode === "edit" ? "edit" : "generate",
+    mode: value.mode === "edit" || value.mode === "vision" ? value.mode : "generate",
   } as ImageTask;
+
 
   if (migrated.status === "pending" || migrated.status === "running") {
     return {

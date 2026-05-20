@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { editImage, generateImage, getImageGenerationDebug } from "../api/openaiImages";
+import { analyzeImages, getVisionAnalysisDebug } from "../api/openaiVision";
+
 import {
   cacheImageFromUrl,
   clearImageCache,
@@ -12,12 +14,13 @@ import {
 import { toFriendlyError } from "../lib/errors";
 import { buildCompatibleImageRequest } from "../lib/imageSizing";
 import { loadTasks, saveTasks } from "../lib/storage";
-import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask } from "../types";
+import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask, VisionFormState } from "../types";
 
-interface PendingEditInputs {
+interface PendingTaskInputs {
   images: File[];
-  mask: File | null;
+  mask?: File | null;
 }
+
 
 function createTaskId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -73,7 +76,8 @@ export function useImageTasks(settings: AppSettings) {
   const objectUrlsRef = useRef(new Set<string>());
   // Edit-mode inputs can't be persisted (they're raw File blobs). Keep them in
   // memory keyed by task id; drop entries once the task finishes or is removed.
-  const pendingInputsRef = useRef(new Map<string, PendingEditInputs>());
+  const pendingInputsRef = useRef(new Map<string, PendingTaskInputs>());
+
 
   const revokeObjectUrl = useCallback((url?: string) => {
     if (!isBlobUrl(url)) {
@@ -98,7 +102,10 @@ export function useImageTasks(settings: AppSettings) {
     }
   }, []);
 
+  const shouldCacheTaskImage = useCallback((task: ImageTask) => task.mode !== "vision", []);
+
   const attachCachedImage = useCallback(
+
     (taskId: string, record: CachedImageRecord) => {
       const objectUrl = createObjectUrl(record.blob);
 
@@ -145,7 +152,12 @@ export function useImageTasks(settings: AppSettings) {
         }
 
         try {
+          if (!shouldCacheTaskImage(task)) {
+            continue;
+          }
+
           if (task.imageCached) {
+
             const cached = await getCachedImage(task.id);
 
             if (cached && active) {
@@ -189,9 +201,10 @@ export function useImageTasks(settings: AppSettings) {
     return () => {
       active = false;
     };
-  }, [attachCachedImage, refreshCacheStats]);
+  }, [attachCachedImage, refreshCacheStats, shouldCacheTaskImage]);
 
   const cacheGeneratedImage = useCallback(
+
     async (task: ImageTask, imageUrl: string, b64Json: string | undefined, signal: AbortSignal) => {
       const metadata = {
         prompt: task.prompt,
@@ -273,6 +286,43 @@ export function useImageTasks(settings: AppSettings) {
           const currentSettings = settingsRef.current;
           const pendingInputs = pendingInputsRef.current.get(task.id);
           const shouldEdit = task.mode === "edit";
+          const shouldAnalyze = task.mode === "vision";
+
+          if (shouldAnalyze) {
+            if (!pendingInputs || pendingInputs.images.length === 0) {
+              throw new Error(
+                "OCR task is missing its input images. They are only kept in memory; please re-upload and try again.",
+              );
+            }
+
+            const result = await analyzeImages({
+              apiKey: currentSettings.apiKey,
+              baseUrl: currentSettings.baseUrl,
+              model: task.model,
+              prompt: task.prompt,
+              images: pendingInputs.images,
+              detail: task.visionDetail,
+              extraParams: task.extraParams,
+              signal: controller.signal,
+            });
+
+            setTasks((current) =>
+              current.map((item) =>
+                item.id === task.id
+                  ? {
+                      ...item,
+                      status: "success",
+                      outputText: result.outputText,
+                      raw: result.raw,
+                      debug: result.debug,
+                      error: undefined,
+                      finishedAt: Date.now(),
+                    }
+                  : item,
+              ),
+            );
+            return;
+          }
 
           if (shouldEdit && (!pendingInputs || pendingInputs.images.length === 0)) {
             throw new Error(
@@ -329,7 +379,8 @@ export function useImageTasks(settings: AppSettings) {
           );
         } catch (error) {
           const wasAborted = controller.signal.aborted;
-          const debug = wasAborted ? undefined : getImageGenerationDebug(error);
+          const debug = wasAborted ? undefined : getImageGenerationDebug(error) ?? getVisionAnalysisDebug(error);
+
           setTasks((current) =>
             current.map((item) =>
               item.id === task.id
@@ -382,9 +433,10 @@ export function useImageTasks(settings: AppSettings) {
       // This includes tasks with blob: URLs (image is in memory but IndexedDB
       // write failed earlier), data: URLs, and remote URLs.
       for (const task of tasksRef.current) {
-        if (task.status !== "success" || task.imageCached) {
+        if (task.status !== "success" || task.imageCached || !shouldCacheTaskImage(task)) {
           continue;
         }
+
 
         // Build a prioritized list of sources to try. Prefer b64Json (local,
         // never expires) over blob: URLs (in-memory, valid for this session)
@@ -427,7 +479,8 @@ export function useImageTasks(settings: AppSettings) {
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [attachCachedImage, refreshCacheStats]);
+  }, [attachCachedImage, refreshCacheStats, shouldCacheTaskImage]);
+
 
   useEffect(() => {
     return () => {
@@ -480,7 +533,36 @@ export function useImageTasks(settings: AppSettings) {
     setTasks((current) => [...current, ...newTasks]);
   }
 
+  function addVisionTask(form: VisionFormState, extraParams: Record<string, unknown>) {
+    const now = Date.now();
+    const currentSettings = settingsRef.current;
+    const model = currentSettings.visionModel.trim();
+    const inputImageFiles = form.inputImages.map((item) => item.file);
+    const id = createTaskId();
+
+    pendingInputsRef.current.set(id, {
+      images: inputImageFiles,
+    });
+
+    const newTask: ImageTask = {
+      id,
+      mode: "vision",
+      prompt: form.prompt.trim(),
+      model,
+      size: "vision",
+      responseFormat: currentSettings.responseFormat,
+      status: "pending",
+      createdAt: now,
+      extraParams,
+      inputImageCount: inputImageFiles.length,
+      visionDetail: form.detail,
+    };
+
+    setTasks((current) => [...current, newTask]);
+  }
+
   function retryTask(id: string) {
+
     if (controllersRef.current.has(id)) {
       return;
     }
@@ -492,19 +574,20 @@ export function useImageTasks(settings: AppSettings) {
     // Edit tasks can only be retried if the input File blobs are still in
     // memory (i.e. the task was never successful and pendingInputs was kept).
     // Otherwise we mark it as error-with-message — the user needs to re-upload.
-    if (currentTask?.mode === "edit" && !pendingInputsRef.current.has(id)) {
+    if ((currentTask?.mode === "edit" || currentTask?.mode === "vision") && !pendingInputsRef.current.has(id)) {
       setTasks((current) =>
         current.map((task) =>
           task.id === id
             ? {
                 ...task,
                 status: "error",
-                error: "tasks.messages.editInputsDropped",
+                error: task.mode === "vision" ? "tasks.messages.visionInputsDropped" : "tasks.messages.editInputsDropped",
                 imageUrl: undefined,
                 b64Json: undefined,
                 imageCached: false,
                 imageMimeType: undefined,
                 imageSize: undefined,
+                outputText: task.mode === "vision" ? task.outputText : undefined,
                 raw: undefined,
                 finishedAt: Date.now(),
               }
@@ -513,6 +596,7 @@ export function useImageTasks(settings: AppSettings) {
       );
       return;
     }
+
 
     setTasks((current) =>
       current.map((task) =>
@@ -525,9 +609,11 @@ export function useImageTasks(settings: AppSettings) {
               imageCached: false,
               imageMimeType: undefined,
               imageSize: undefined,
+              outputText: undefined,
               raw: undefined,
               debug: undefined,
               error: undefined,
+
               startedAt: undefined,
               finishedAt: undefined,
               createdAt: Date.now(),
@@ -627,7 +713,9 @@ export function useImageTasks(settings: AppSettings) {
     tasks,
     cacheStats,
     addTasks,
+    addVisionTask,
     retryTask,
+
     cancelTask,
     removeTask,
     clearTaskImage,

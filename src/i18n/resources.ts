@@ -35,8 +35,11 @@ export const resources = {
           "Presets only fill the base URL, model, and response format. You still need to use your own API key.",
         apiBaseUrl: "API Base URL",
         apiKey: "API Key",
-        model: "Model",
+        model: "Image model",
+        visionModel: "Vision/OCR model",
+        visionModelHint: "Used by the OCR panel. It should be a model that supports image input through /responses.",
         responseFormat: "Response Format",
+
         concurrency: "Concurrency",
         apiKeyNotice: "Your API key is stored only in this browser.",
         presets: {
@@ -117,9 +120,30 @@ export const resources = {
         },
       },
 
+      vision: {
+        title: "Extract Text from Images",
+        subtitle: "Upload screenshots or photos and ask a vision model to extract detailed text information.",
+        prompt: "OCR Prompt",
+        promptPlaceholder: "Extract all visible text, keep reading order, preserve tables/lists, and mark uncertain areas.",
+        detail: "Vision detail",
+        detailHint: "Use high for OCR when small text matters; auto is cheaper when the model can decide.",
+        advancedJsonParams: "Advanced JSON Params",
+        modelHint: "Current OCR model: {{model}}. Change it in API Settings if your endpoint uses another vision model.",
+        analyze: "Extract text",
+        inputImages: {
+          title: "Images to read",
+          hint: "PNG, JPEG, and WebP are supported. Images stay in memory and are sent directly to your configured endpoint.",
+          addButton: "Add image",
+          remove: "Remove",
+          size: "{{width}}×{{height}}",
+          badge: "{{count}} image(s)",
+        },
+      },
+
       workspace: {
         tabs: {
           tasks: "Tasks",
+
           library: "Image Library",
         },
       },
@@ -153,14 +177,21 @@ export const resources = {
         elapsed: "Elapsed: {{value}}",
         generating: "Generating...",
         noImageYet: "No image yet",
+        noTextYet: "No text output yet",
+        analyzing: "Analyzing...",
         restoringCachedImage: "Restoring cached image...",
         previewGeneratedImage: "Preview generated image",
         debugDetails: "Debug details",
+        outputText: "Extracted text",
+
 
         fields: {
           model: "Model",
           size: "Size",
           format: "Format",
+          inputImages: "Input images",
+          detail: "Detail",
+
         },
         status: {
           pending: "pending",
@@ -173,9 +204,12 @@ export const resources = {
           preview: "Preview",
           download: "Download",
           copyImageUrl: "Copy image URL",
+          copyOutput: "Copy text",
+          downloadText: "Download text",
           copyPrompt: "Copy prompt",
           copyDebug: "Copy debug JSON",
           deleteImageCache: "Delete image cache",
+
           reuseParams: "Reuse params",
           retry: "Retry",
           cancel: "Cancel",
@@ -192,6 +226,8 @@ export const resources = {
         messages: {
 
           imageUrlCopied: "Image URL copied.",
+          outputCopied: "Extracted text copied.",
+          outputDownloadStarted: "Text download started.",
           promptCopied: "Prompt copied.",
           debugCopied: "Debug JSON copied.",
           downloadStarted: "Download started.",
@@ -200,6 +236,9 @@ export const resources = {
           taskInterrupted: "Task was interrupted by page reload.",
           editInputsDropped:
             "Input images were released from memory. Please re-upload to retry this edit.",
+          visionInputsDropped:
+            "OCR images were released from memory. Please re-upload to retry this extraction.",
+
           inputImageInvalid: "Invalid input image: {{reason}}",
           maskMismatch:
             "Mask dimensions do not match the first image. They must be identical.",
@@ -225,7 +264,10 @@ export const resources = {
         apiKeyRequired: "API Key is required.",
         apiBaseUrlRequired: "API Base URL is required.",
         modelRequired: "Model is required.",
+        visionModelRequired: "Vision/OCR model is required.",
         promptRequired: "Prompt is required.",
+        visionImageRequired: "At least one image is required for OCR.",
+
         apiKeyRequiredToFetchModels: "API Key is required to fetch models.",
         apiBaseUrlRequiredToFetchModels: "API Base URL is required to fetch models.",
         advancedJsonInvalid: "Advanced JSON Params is not valid JSON.",
@@ -261,8 +303,11 @@ export const resources = {
         presetsNote: "预设只会填充 Base URL、模型和响应格式，你仍然需要使用自己的 API Key。",
         apiBaseUrl: "API Base URL",
         apiKey: "API Key",
-        model: "模型",
+        model: "图片模型",
+        visionModel: "识图/OCR 模型",
+        visionModelHint: "识图面板使用这个模型，需要端点支持 /responses 的图片输入。",
         responseFormat: "响应格式",
+
         concurrency: "并发数",
         apiKeyNotice: "你的 API Key 只会保存在当前浏览器中。",
         presets: {
@@ -342,9 +387,30 @@ export const resources = {
         },
       },
 
+      vision: {
+        title: "识图提取文字",
+        subtitle: "上传截图或照片，让视觉模型尽量详细地提取图中文字信息。",
+        prompt: "识图提示词",
+        promptPlaceholder: "提取所有可见文字，保持阅读顺序、表格/列表结构，并标出不确定区域。",
+        detail: "识图细节级别",
+        detailHint: "小字较多时建议 high；auto 会让模型自己判断，通常更省。",
+        advancedJsonParams: "高级 JSON 参数",
+        modelHint: "当前识图模型：{{model}}。如果你的端点使用其他视觉模型，请在 API 设置里修改。",
+        analyze: "开始识图",
+        inputImages: {
+          title: "待识别图片",
+          hint: "支持 PNG、JPEG、WebP。图片只保存在内存中，并直接发送到你配置的端点。",
+          addButton: "添加图片",
+          remove: "移除",
+          size: "{{width}}×{{height}}",
+          badge: "{{count}} 张图片",
+        },
+      },
+
       workspace: {
         tabs: {
           tasks: "任务",
+
           library: "图片库",
         },
       },
@@ -377,14 +443,21 @@ export const resources = {
         elapsed: "耗时：{{value}}",
         generating: "生成中...",
         noImageYet: "暂无图片",
+        noTextYet: "暂无文字结果",
+        analyzing: "识别中...",
         restoringCachedImage: "正在恢复缓存图片...",
         previewGeneratedImage: "预览生成图片",
         debugDetails: "调试详情",
+        outputText: "识图结果",
+
 
         fields: {
           model: "模型",
           size: "尺寸",
           format: "格式",
+          inputImages: "输入图片",
+          detail: "细节级别",
+
         },
         status: {
           pending: "待处理",
@@ -397,9 +470,12 @@ export const resources = {
           preview: "预览",
           download: "下载",
           copyImageUrl: "复制图片 URL",
+          copyOutput: "复制文字结果",
+          downloadText: "下载文字",
           copyPrompt: "复制提示词",
           copyDebug: "复制调试 JSON",
           deleteImageCache: "删除图片缓存",
+
           reuseParams: "使用此参数",
           retry: "重试",
           cancel: "取消",
@@ -416,6 +492,8 @@ export const resources = {
         messages: {
 
           imageUrlCopied: "图片 URL 已复制。",
+          outputCopied: "识图文字已复制。",
+          outputDownloadStarted: "已开始下载文字。",
           promptCopied: "提示词已复制。",
           debugCopied: "调试 JSON 已复制。",
           downloadStarted: "已开始下载。",
@@ -423,6 +501,8 @@ export const resources = {
           taskCancelled: "任务已取消。",
           taskInterrupted: "任务因页面重新加载而中断。",
           editInputsDropped: "输入图片已从内存释放，请重新上传后再重试编辑任务。",
+          visionInputsDropped: "识图图片已从内存释放，请重新上传后再重试识图任务。",
+
           inputImageInvalid: "输入图片不合法：{{reason}}",
           maskMismatch: "Mask 尺寸与首张图不一致，两者尺寸必须完全相同。",
           paramsApplied: "参数已填入。",
@@ -445,7 +525,10 @@ export const resources = {
         apiKeyRequired: "请填写 API Key。",
         apiBaseUrlRequired: "请填写 API Base URL。",
         modelRequired: "请填写模型。",
+        visionModelRequired: "请填写识图/OCR 模型。",
         promptRequired: "请填写提示词。",
+        visionImageRequired: "请至少上传一张用于识图的图片。",
+
         apiKeyRequiredToFetchModels: "获取模型前请先填写 API Key。",
         apiBaseUrlRequiredToFetchModels: "获取模型前请先填写 API Base URL。",
         advancedJsonInvalid: "高级 JSON 参数不是有效的 JSON。",

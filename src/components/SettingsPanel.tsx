@@ -8,7 +8,8 @@ import { Notice } from "./Notice";
 const PROVIDER_PRESETS: Array<{
   name: string;
   descriptionKey: string;
-  settings: Pick<AppSettings, "baseUrl" | "model" | "responseFormat">;
+  settings: Pick<AppSettings, "baseUrl" | "model" | "visionModel" | "responseFormat">;
+
 }> = [
   {
     name: "OpenAI",
@@ -16,7 +17,9 @@ const PROVIDER_PRESETS: Array<{
     settings: {
       baseUrl: "https://api.openai.com/v1",
       model: "gpt-image-1",
+      visionModel: "gpt-4.1-mini",
       responseFormat: "url",
+
     },
   },
   {
@@ -25,7 +28,9 @@ const PROVIDER_PRESETS: Array<{
     settings: {
       baseUrl: "https://api.laozhang.ai/v1",
       model: "gpt-image-1",
+      visionModel: "gpt-4.1-mini",
       responseFormat: "url",
+
     },
   },
   {
@@ -34,7 +39,9 @@ const PROVIDER_PRESETS: Array<{
     settings: {
       baseUrl: "https://api-vip.laozhang.ai/v1",
       model: "gpt-image-1",
+      visionModel: "gpt-4.1-mini",
       responseFormat: "url",
+
     },
   },
 ];
@@ -283,9 +290,24 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
 
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-slate-700">
+            {t("settings.visionModel")}
+          </span>
+          <input
+            list={datalistId}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+            placeholder="gpt-4.1-mini or gpt-4o-mini"
+            value={settings.visionModel}
+            onChange={(event) => onChange({ visionModel: event.target.value })}
+          />
+          <p className="mt-1.5 text-xs text-slate-500">{t("settings.visionModelHint")}</p>
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-slate-700">
             {t("settings.responseFormat")}
           </span>
           <select
+
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             value={settings.responseFormat}
             onChange={(event) =>

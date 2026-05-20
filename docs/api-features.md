@@ -1,6 +1,7 @@
 # OpenAI Images API — Features Reference
 
-This app is a thin BYOK frontend over the OpenAI Images API. Anything the API itself supports is potentially usable here. The UI exposes the most common controls (model, size, n, response format, concurrency, input images, mask); everything else can be passed through the **Advanced JSON** field on the generation panel and is forwarded as-is to the request body / form.
+This app is a thin BYOK frontend over the OpenAI Images API plus an OCR helper over OpenAI-compatible vision input. Anything the upstream API itself supports is potentially usable here. The image UI exposes the most common controls (model, size, n, response format, concurrency, input images, mask); everything else can be passed through the **Advanced JSON** field on the generation panel and is forwarded as-is to the request body / form.
+
 
 This document lists the parameters and capabilities you can take advantage of. It applies to the official OpenAI endpoint and to any OpenAI-compatible relay (e.g. LaoZhang) that mirrors the same surface.
 
@@ -8,8 +9,10 @@ This document lists the parameters and capabilities you can take advantage of. I
 > ```
 > POST {baseUrl}/images/generations    (text → image)
 > POST {baseUrl}/images/edits          (image(s) + prompt → image, multipart/form-data)
+> POST {baseUrl}/responses             (image(s) + prompt → text, JSON body)
 > ```
-> Which one is used depends on whether the user uploaded any input images.
+> The generation panel uses the first two endpoints. The OCR panel always uses `/responses`.
+
 
 ---
 
@@ -41,8 +44,11 @@ The filter is only for convenience. It does not guarantee that a model works wit
 | Response format     | `response_format` | `url` or `b64_json`.                                                   |
 | **Input images**    | `image` (multipart) | Upload one or more reference images to enter edit mode (request auto-switches to `/images/edits`). |
 | **Mask**            | `mask` (multipart) | Optional inpainting mask; must be PNG and match the first image's size. |
+| Vision/OCR model    | `model`            | Used only by the OCR panel for `/responses`.                          |
+| Vision detail       | `detail` on `input_image` | OCR panel detail level: `auto`, `high`, or `low`.                |
 | Concurrency         | (client-side)     | How many tasks run in parallel; does not map to a request field.      |
 | Count               | (client-side)     | The app issues N independent requests with `n: 1` each.               |
+
 
 When any input image is attached, the request is sent as `multipart/form-data` to `/images/edits` instead of as JSON to `/images/generations`. All of the fields above (prompt, size, response_format, Advanced JSON passthroughs) still apply — they become form parts instead of JSON keys.
 
@@ -126,13 +132,28 @@ These exist on the OpenAI Images surface but are not wired up in the UI:
 
 If you need variations, file an issue or a PR.
 
-### Edit-mode caveats
+### OCR / vision input
 
-- Input File blobs live **only in memory** — they are not persisted into localStorage. Reloading the page drops them; queued edit tasks that hadn't started will be marked cancelled.
-- Retrying a finished edit task requires re-uploading the original images. The UI surfaces a clear message (`editInputsDropped`) when this happens.
-- Not every OpenAI-compatible relay keeps pace with OpenAI on `/images/edits`. If a relay returns 404 / "not implemented" for edits while `/images/generations` works, that is a relay-side gap.
+The OCR panel calls `POST {baseUrl}/responses` and sends a JSON body with one `input_text` item plus one or more base64 data URL `input_image` items. It returns text, not an image, so OCR task cards show copy/download text actions instead of image preview/download actions.
+
+Useful Advanced JSON examples for OCR:
+
+```json
+{ "max_output_tokens": 3000 }
+```
+
+```json
+{ "temperature": 0 }
+```
+
+### Edit-mode and OCR caveats
+
+- Input File blobs live **only in memory** — they are not persisted into localStorage. Reloading the page drops them; queued edit/OCR tasks that hadn't started will be marked cancelled.
+- Retrying a finished edit or OCR task requires re-uploading the original images. The UI surfaces a clear message (`editInputsDropped` / `visionInputsDropped`) when this happens.
+- Not every OpenAI-compatible relay keeps pace with OpenAI on `/images/edits` or `/responses`. If a relay returns 404 / "not implemented" while `/images/generations` works, that is a relay-side gap.
 
 ---
+
 
 ## Streaming
 

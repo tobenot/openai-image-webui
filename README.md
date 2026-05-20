@@ -11,8 +11,10 @@ Bring your own API key and endpoint.
 - Bring your own API key
 - Bring your own API endpoint
 - Compatible with OpenAI Images API
+- Supports OCR / image-to-text extraction through OpenAI-compatible vision endpoints
 - Supports custom model names, with on-demand model list fetching and type filtering from `GET /v1/models`
-- Supports parallel image generation tasks
+- Supports parallel image generation and OCR tasks
+
 - Supports URL and base64 image responses
 - Supports image preview, download, and copy
 - Stores settings locally in your browser
@@ -43,22 +45,24 @@ npm run deploy
 1. Open the app.
 2. Choose a provider preset, or enter your API Base URL manually.
 3. Enter your API Key.
-4. Enter the model name.
+4. Enter the image model name and, if using OCR, the vision/OCR model name.
 5. Write a prompt.
 6. Choose image count, size, response format, and concurrency.
-7. Click Generate.
+7. Click Generate for image output, or upload images in the OCR panel and click Extract text.
+
 
 ## Provider Presets
 
 The app includes quick presets for common OpenAI-compatible Images API providers:
 
-| Provider | Base URL | Default model |
-| --- | --- | --- |
-| OpenAI | `https://api.openai.com/v1` | `gpt-image-1` |
-| LaoZhang API | `https://api.laozhang.ai/v1` | `gpt-image-1` |
-| LaoZhang VIP | `https://api-vip.laozhang.ai/v1` | `gpt-image-1` |
+| Provider | Base URL | Default image model | Default vision/OCR model |
+| --- | --- | --- | --- |
+| OpenAI | `https://api.openai.com/v1` | `gpt-image-1` | `gpt-4.1-mini` |
+| LaoZhang API | `https://api.laozhang.ai/v1` | `gpt-image-1` | `gpt-4.1-mini` |
+| LaoZhang VIP | `https://api-vip.laozhang.ai/v1` | `gpt-image-1` | `gpt-4.1-mini` |
 
-Presets only fill the base URL, default model, and response format. You still need to bring your own API key. Any OpenAI-compatible relay (LaoZhang is just one example) works the same way — point the base URL at it and go. Use the **Fetch models** button next to the Model field to load the live model list from whichever endpoint you configured.
+Presets only fill the base URL, default models, and response format. You still need to bring your own API key. Any OpenAI-compatible relay (LaoZhang is just one example) works the same way — point the base URL at it and go. Use the **Fetch models** button next to the Model field to load the live model list from whichever endpoint you configured.
+
 
 For a full list of OpenAI Images API parameters that can be used with this app (including ones not exposed in the UI, passed via the Advanced JSON field), see [`docs/api-features.md`](./docs/api-features.md).
 
@@ -69,12 +73,14 @@ The official OpenAI JavaScript SDK can target browsers only when `dangerouslyAll
 ## API Format
 
 
-This app calls one of two endpoints, depending on whether any input images are attached:
+This app calls Images endpoints for image output, and the Responses endpoint for OCR / image-to-text output:
 
 ```txt
 POST {baseUrl}/images/generations     # text → image, JSON body
 POST {baseUrl}/images/edits           # image(s) + prompt → image, multipart/form-data
+POST {baseUrl}/responses              # image(s) + prompt → text, JSON body
 ```
+
 
 Example generation request body:
 
@@ -90,7 +96,10 @@ Example generation request body:
 
 Edit requests are sent as `multipart/form-data` with the same logical fields plus one or more `image` parts and an optional `mask` part. The response shape is identical to generations.
 
-Supported response formats:
+OCR requests are sent to `/responses` with `input_text` plus one or more base64 data URL `input_image` items. The task card displays the extracted text and supports copy/download.
+
+Supported image response formats:
+
 
 ```json
 {
