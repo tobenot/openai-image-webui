@@ -81,6 +81,7 @@ const MODEL_CATEGORY_LABEL_KEYS: Record<ModelCapability, string> = {
 export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProps) {
   const { t } = useTranslation();
   const datalistId = useId();
+  const visionDatalistId = useId();
   const [modelsState, setModelsState] = useState<ModelsState>(INITIAL_MODELS_STATE);
   const [modelFilter, setModelFilter] = useState<ModelFilter>("image");
   const abortRef = useRef<AbortController | null>(null);
@@ -293,12 +294,27 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
             {t("settings.visionModel")}
           </span>
           <input
-            list={datalistId}
+            list={visionDatalistId}
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             placeholder="gpt-4.1-mini or gpt-4o-mini"
             value={settings.visionModel}
             onChange={(event) => onChange({ visionModel: event.target.value })}
           />
+          <datalist id={visionDatalistId}>
+            {modelsState.list.map((item) => {
+              const categoryLabel = t(MODEL_CATEGORY_LABEL_KEYS[item.category]);
+              return (
+                <option key={`vision-${item.category}-${item.id}`} value={item.id}>
+                  {item.ownedBy
+                    ? t("settings.models.optionWithOwner", {
+                        category: categoryLabel,
+                        owner: item.ownedBy,
+                      })
+                    : categoryLabel}
+                </option>
+              );
+            })}
+          </datalist>
           <p className="mt-1.5 text-xs text-slate-500">{t("settings.visionModelHint")}</p>
         </label>
 
