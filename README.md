@@ -11,9 +11,10 @@ Bring your own API key and endpoint.
 - Bring your own API key
 - Bring your own API endpoint
 - Compatible with OpenAI Images API
-- Supports OCR / image-to-text extraction through OpenAI-compatible vision endpoints
+- Supports vision image understanding (with optional text extraction) through OpenAI-compatible vision endpoints
 - Supports custom model names, with on-demand model list fetching and type filtering from `GET /v1/models`
-- Supports parallel image generation and OCR tasks
+- Image model suggestions can be filtered by type, while Vision model suggestions remain unfiltered for multimodal models
+- Supports parallel image generation and vision analysis tasks
 
 - Supports URL and base64 image responses
 - Supports image preview, download, and copy
@@ -73,7 +74,7 @@ The official OpenAI JavaScript SDK can target browsers only when `dangerouslyAll
 ## API Format
 
 
-This app calls Images endpoints for image output, and the Responses endpoint for OCR / image-to-text output:
+This app calls Images endpoints for image output, and the Responses endpoint for vision analysis output:
 
 ```txt
 POST {baseUrl}/images/generations     # text → image, JSON body

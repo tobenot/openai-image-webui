@@ -91,6 +91,12 @@ export interface ImageTask {
   visionDetail?: VisionDetail;
   /** Tiny JPEG data-URL thumbnail of the first input image (vision/edit tasks). */
   inputThumbnail?: string;
+  /** Real token usage from API response (vision/text tasks). */
+  usage?: { inputTokens?: number; outputTokens?: number; cachedInputTokens?: number };
+  /** Estimated cost in USD, computed after API response. */
+  estimatedCostUsd?: number;
+  /** Cost calculation method used. */
+  costMethod?: "per-image" | "per-token" | "unknown";
 }
 
 export interface ImageCacheStats {

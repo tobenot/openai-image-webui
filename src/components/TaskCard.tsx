@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { copyText, downloadImage, downloadText } from "../lib/download";
+import { formatCostUsd } from "../lib/pricing";
 
 import type { ImageTask } from "../types";
 
@@ -250,6 +251,32 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClear
                 </div>
               </>
             )}
+            {task.usage && (task.usage.inputTokens || task.usage.outputTokens) ? (
+              <div className="rounded-lg bg-sky-50 p-2">
+                <dt className="font-medium text-sky-700">{t("tasks.fields.tokens")}</dt>
+                <dd className="mt-1 text-sky-800">
+                  {task.usage.inputTokens != null && (
+                    <span>{t("tasks.fields.tokensIn")}: {task.usage.inputTokens.toLocaleString()}</span>
+                  )}
+                  {task.usage.outputTokens != null && (
+                    <span className="ml-2">{t("tasks.fields.tokensOut")}: {task.usage.outputTokens.toLocaleString()}</span>
+                  )}
+                  {task.estimatedCostUsd != null && (
+                    <span className="ml-2 text-amber-600">≈ {formatCostUsd(task.estimatedCostUsd)}</span>
+                  )}
+                </dd>
+              </div>
+            ) : task.estimatedCostUsd != null ? (
+              <div className="rounded-lg bg-amber-50 p-2">
+                <dt className="font-medium text-amber-700">{t("tasks.fields.cost")}</dt>
+                <dd className="mt-1 font-semibold text-amber-800">
+                  {formatCostUsd(task.estimatedCostUsd)}
+                  <span className="ml-1 font-normal text-amber-600">
+                    ({task.costMethod === "per-token" ? "token" : "img"})
+                  </span>
+                </dd>
+              </div>
+            ) : null}
           </dl>
 
           {hasOutputText ? (

@@ -13,6 +13,7 @@ import {
 } from "../lib/imageCache";
 import { toFriendlyError } from "../lib/errors";
 import { buildCompatibleImageRequest } from "../lib/imageSizing";
+import { estimateImageCost, estimateTokenCost, extractUsageFromRaw } from "../lib/pricing";
 import { loadTasks, saveTasks } from "../lib/storage";
 import { generateThumbnail } from "../lib/thumbnail";
 import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask, VisionFormState } from "../types";
@@ -307,6 +308,9 @@ export function useImageTasks(settings: AppSettings) {
               signal: controller.signal,
             });
 
+            const visionUsage = extractUsageFromRaw(result.raw);
+            const visionCost = visionUsage ? estimateTokenCost(task.model, visionUsage) : undefined;
+
             setTasks((current) =>
               current.map((item) =>
                 item.id === task.id
@@ -318,6 +322,13 @@ export function useImageTasks(settings: AppSettings) {
                       debug: result.debug,
                       error: undefined,
                       finishedAt: Date.now(),
+                      usage: visionUsage ? {
+                        inputTokens: visionUsage.inputTokens,
+                        outputTokens: visionUsage.outputTokens,
+                        cachedInputTokens: visionUsage.cachedInputTokens,
+                      } : undefined,
+                      estimatedCostUsd: visionCost?.usd,
+                      costMethod: visionCost?.method,
                     }
                   : item,
               ),
@@ -356,6 +367,8 @@ export function useImageTasks(settings: AppSettings) {
               });
           const cachedImage = await cacheGeneratedImage(task, result.imageUrl, result.b64Json, controller.signal);
 
+          const imageQuality = typeof task.extraParams?.quality === "string" ? task.extraParams.quality : undefined;
+          const imageCost = estimateImageCost(task.model, task.size, imageQuality, 1);
 
           setTasks((current) =>
             current.map((item) =>
@@ -374,6 +387,8 @@ export function useImageTasks(settings: AppSettings) {
                     debug: result.debug,
                     error: undefined,
                     finishedAt: Date.now(),
+                    estimatedCostUsd: imageCost?.usd,
+                    costMethod: imageCost?.method,
                   }
                 : item,
             ),

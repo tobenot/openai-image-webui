@@ -195,6 +195,10 @@ export const resources = {
           format: "Format",
           inputImages: "Input images",
           detail: "Detail",
+          cost: "Est. cost",
+          tokens: "Tokens",
+          tokensIn: "In",
+          tokensOut: "Out",
 
         },
         status: {
@@ -465,6 +469,10 @@ export const resources = {
           format: "格式",
           inputImages: "输入图片",
           detail: "细节级别",
+          cost: "预估费用",
+          tokens: "Token 用量",
+          tokensIn: "输入",
+          tokensOut: "输出",
 
         },
         status: {
