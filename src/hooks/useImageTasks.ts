@@ -14,6 +14,7 @@ import {
 import { toFriendlyError } from "../lib/errors";
 import { buildCompatibleImageRequest } from "../lib/imageSizing";
 import { loadTasks, saveTasks } from "../lib/storage";
+import { generateThumbnail } from "../lib/thumbnail";
 import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask, VisionFormState } from "../types";
 
 interface PendingTaskInputs {
@@ -559,6 +560,14 @@ export function useImageTasks(settings: AppSettings) {
     };
 
     setTasks((current) => [...current, newTask]);
+
+    if (inputImageFiles.length > 0) {
+      void generateThumbnail(inputImageFiles[0]).then((thumb) => {
+        setTasks((current) =>
+          current.map((t) => (t.id === id ? { ...t, inputThumbnail: thumb } : t)),
+        );
+      }).catch(() => undefined);
+    }
   }
 
   function retryTask(id: string) {

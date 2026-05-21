@@ -89,6 +89,8 @@ export interface ImageTask {
   inputImageCount?: number;
   hasMask?: boolean;
   visionDetail?: VisionDetail;
+  /** Tiny JPEG data-URL thumbnail of the first input image (vision/edit tasks). */
+  inputThumbnail?: string;
 }
 
 export interface ImageCacheStats {

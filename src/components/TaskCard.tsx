@@ -160,12 +160,26 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClear
       <div className="grid gap-0 md:grid-cols-[220px_1fr]">
         <div className="flex min-h-52 items-center justify-center bg-slate-100">
           {isVisionTask ? (
-            <div className="px-6 text-center text-sm text-slate-400">
-              <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-lg font-bold text-violet-600">
-                OCR
+            task.inputThumbnail ? (
+              <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">
+                <img
+                  className="h-16 w-16 rounded-lg object-cover ring-1 ring-slate-200"
+                  src={task.inputThumbnail}
+                  alt="input preview"
+                />
+                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                  <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-bold text-violet-600">OCR</span>
+                  {placeholderText}
+                </div>
               </div>
-              {placeholderText}
-            </div>
+            ) : (
+              <div className="px-6 text-center text-sm text-slate-400">
+                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-lg font-bold text-violet-600">
+                  OCR
+                </div>
+                {placeholderText}
+              </div>
+            )
           ) : task.imageUrl ? (
             <button
               type="button"
