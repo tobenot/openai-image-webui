@@ -7,7 +7,7 @@ export const STORAGE_KEYS = {
 } as const;
 
 export const DEFAULT_VISION_PROMPT =
-  "Extract all visible text from the image as accurately and completely as possible. Preserve line breaks, reading order, tables, lists, and labels. Mark uncertain or unreadable areas clearly, then add a concise summary of important visual context.";
+  "请用中文详细描述这张图片的内容：画面中有什么、表达了什么意思、关键信息是什么。如果图中有文字，也一并提取出来。";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",

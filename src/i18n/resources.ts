@@ -36,8 +36,8 @@ export const resources = {
         apiBaseUrl: "API Base URL",
         apiKey: "API Key",
         model: "Image model",
-        visionModel: "Vision/OCR model",
-        visionModelHint: "Used by the OCR panel. It should be a model that supports image input through /responses.",
+        visionModel: "Vision model",
+        visionModelHint: "Used by the Vision panel. It should be a multimodal model that supports image input through /responses.",
         responseFormat: "Response Format",
 
         concurrency: "Concurrency",
@@ -121,17 +121,17 @@ export const resources = {
       },
 
       vision: {
-        title: "Extract Text from Images",
-        subtitle: "Upload screenshots or photos and ask a vision model to extract detailed text information.",
-        prompt: "OCR Prompt",
-        promptPlaceholder: "Extract all visible text, keep reading order, preserve tables/lists, and mark uncertain areas.",
+        title: "Understand Images",
+        subtitle: "Upload images and ask a vision model to describe what they show, extract meaning, and read any text.",
+        prompt: "Vision Prompt",
+        promptPlaceholder: "Describe this image in detail: what is shown, what it means, and any text present.",
         detail: "Vision detail",
-        detailHint: "Use high for OCR when small text matters; auto is cheaper when the model can decide.",
+        detailHint: "Use high when fine details matter; auto is cheaper when the model can decide.",
         advancedJsonParams: "Advanced JSON Params",
-        modelHint: "Current OCR model: {{model}}. Change it in API Settings if your endpoint uses another vision model.",
-        analyze: "Extract text",
+        modelHint: "Current vision model: {{model}}. Change it in API Settings if your endpoint uses another vision model.",
+        analyze: "Analyze",
         inputImages: {
-          title: "Images to read",
+          title: "Images to analyze",
           hint: "PNG, JPEG, and WebP are supported. Images stay in memory and are sent directly to your configured endpoint.",
           addButton: "Add image",
           remove: "Remove",
@@ -148,7 +148,7 @@ export const resources = {
         },
         modes: {
           generate: "Generate",
-          vision: "OCR",
+          vision: "Vision",
         },
       },
       library: {
@@ -186,7 +186,7 @@ export const resources = {
         restoringCachedImage: "Restoring cached image...",
         previewGeneratedImage: "Preview generated image",
         debugDetails: "Debug details",
-        outputText: "Extracted text",
+        outputText: "Vision output",
 
 
         fields: {
@@ -241,7 +241,7 @@ export const resources = {
           editInputsDropped:
             "Input images were released from memory. Please re-upload to retry this edit.",
           visionInputsDropped:
-            "OCR images were released from memory. Please re-upload to retry this extraction.",
+            "Vision images were released from memory. Please re-upload to retry this analysis.",
 
           inputImageInvalid: "Invalid input image: {{reason}}",
           maskMismatch:
@@ -268,9 +268,9 @@ export const resources = {
         apiKeyRequired: "API Key is required.",
         apiBaseUrlRequired: "API Base URL is required.",
         modelRequired: "Model is required.",
-        visionModelRequired: "Vision/OCR model is required.",
+        visionModelRequired: "Vision model is required.",
         promptRequired: "Prompt is required.",
-        visionImageRequired: "At least one image is required for OCR.",
+        visionImageRequired: "At least one image is required for vision analysis.",
 
         apiKeyRequiredToFetchModels: "API Key is required to fetch models.",
         apiBaseUrlRequiredToFetchModels: "API Base URL is required to fetch models.",
@@ -308,8 +308,8 @@ export const resources = {
         apiBaseUrl: "API Base URL",
         apiKey: "API Key",
         model: "图片模型",
-        visionModel: "识图/OCR 模型",
-        visionModelHint: "识图面板使用这个模型，需要端点支持 /responses 的图片输入。",
+        visionModel: "识图模型",
+        visionModelHint: "识图面板使用这个模型，需要是支持图片输入的多模态模型（通过 /responses）。",
         responseFormat: "响应格式",
 
         concurrency: "并发数",
@@ -392,12 +392,12 @@ export const resources = {
       },
 
       vision: {
-        title: "识图提取文字",
-        subtitle: "上传截图或照片，让视觉模型尽量详细地提取图中文字信息。",
+        title: "识图理解",
+        subtitle: "上传图片，让视觉模型描述画面内容、提取关键信息和文字。",
         prompt: "识图提示词",
-        promptPlaceholder: "提取所有可见文字，保持阅读顺序、表格/列表结构，并标出不确定区域。",
+        promptPlaceholder: "请用中文详细描述这张图片的内容：画面中有什么、表达了什么意思、关键信息是什么。",
         detail: "识图细节级别",
-        detailHint: "小字较多时建议 high；auto 会让模型自己判断，通常更省。",
+        detailHint: "需要细节时建议 high；auto 会让模型自己判断，通常更省。",
         advancedJsonParams: "高级 JSON 参数",
         modelHint: "当前识图模型：{{model}}。如果你的端点使用其他视觉模型，请在 API 设置里修改。",
         analyze: "开始识图",
@@ -533,7 +533,7 @@ export const resources = {
         apiKeyRequired: "请填写 API Key。",
         apiBaseUrlRequired: "请填写 API Base URL。",
         modelRequired: "请填写模型。",
-        visionModelRequired: "请填写识图/OCR 模型。",
+        visionModelRequired: "请填写识图模型。",
         promptRequired: "请填写提示词。",
         visionImageRequired: "请至少上传一张用于识图的图片。",
 
