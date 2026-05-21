@@ -8,6 +8,7 @@ import { Notice } from "./components/Notice";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { TaskQueue } from "./components/TaskQueue";
 import { VisionPanel } from "./components/VisionPanel";
+import { BatchRenamePanel } from "./components/BatchRenamePanel";
 
 
 import { useImageTasks } from "./hooks/useImageTasks";
@@ -87,7 +88,7 @@ function validateVisionRequest(
 }
 
 type WorkspacePanel = "tasks" | "library";
-type WorkspaceMode = "generate" | "vision";
+type WorkspaceMode = "generate" | "vision" | "rename";
 
 export default function App() {
   const { i18n, t } = useTranslation();
@@ -300,8 +301,8 @@ export default function App() {
 
           <div className="space-y-6">
             <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
-              <div className="grid grid-cols-2 gap-1">
-                {(["generate", "vision"] as const).map((mode) => (
+              <div className="grid grid-cols-3 gap-1">
+                {(["generate", "vision", "rename"] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
@@ -320,8 +321,10 @@ export default function App() {
 
             {activeMode === "generate" ? (
               <GenerationPanel form={form} error={formError} model={settings.model} onChange={updateForm} onSubmit={handleGenerate} />
-            ) : (
+            ) : activeMode === "vision" ? (
               <VisionPanel form={visionForm} error={visionError} visionModel={settings.visionModel} onChange={updateVisionForm} onSubmit={handleAnalyzeImages} />
+            ) : (
+              <BatchRenamePanel settings={settings} />
             )}
 
             <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
