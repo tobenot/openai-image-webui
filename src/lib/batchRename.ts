@@ -202,21 +202,20 @@ export function generateRenameScript(items: RenameItem[]): string {
   const renameLines = doneItems.map((i) => `ren "${i.originalName}" "${i.newName}"`).join("\n");
 
   return `@echo off
-chcp 65001 >nul
-echo 正在准备重命名美术资源...
+echo Preparing to rename assets...
 
-:: 1. 写入备份日志（用于一键还原）
+:: 1. Write backup log (for restore)
 (
 ${backupLines}
 ) > _rename_backup.log
 
-:: 2. 执行重命名
+:: 2. Execute rename
 ${renameLines}
 
 echo.
 echo ==========================================
-echo  重命名完成！
-echo  提示：如果不满意，双击运行 [restore_names.bat] 即可一键还原。
+echo  Rename complete!
+echo  To undo, run [restore_names.bat]
 echo ==========================================
 pause
 `;
@@ -224,11 +223,10 @@ pause
 
 export function generateRestoreScript(): string {
   return `@echo off
-chcp 65001 >nul
-echo 正在读取备份，准备还原原始文件名...
+echo Reading backup, preparing to restore original names...
 
 if not exist _rename_backup.log (
-    echo [错误] 未找到备份日志 _rename_backup.log，无法还原！
+    echo [ERROR] Backup log _rename_backup.log not found, cannot restore!
     pause
     exit /b
 )
@@ -240,7 +238,7 @@ for /f "usebackq tokens=1,2 delims==" %%A in ("_rename_backup.log") do (
 del _rename_backup.log
 echo.
 echo ==========================================
-echo  原始文件名已成功恢复！
+echo  Original filenames restored!
 echo ==========================================
 pause
 `;
