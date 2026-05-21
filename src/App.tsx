@@ -87,7 +87,7 @@ function validateVisionRequest(
 }
 
 type WorkspacePanel = "tasks" | "library";
-
+type WorkspaceMode = "generate" | "vision";
 
 export default function App() {
   const { i18n, t } = useTranslation();
@@ -99,6 +99,7 @@ export default function App() {
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("tasks");
+  const [activeMode, setActiveMode] = useState<WorkspaceMode>("generate");
 
   const {
     tasks,
@@ -298,8 +299,31 @@ export default function App() {
           </aside>
 
           <div className="space-y-6">
-            <GenerationPanel form={form} error={formError} model={settings.model} onChange={updateForm} onSubmit={handleGenerate} />
-            <VisionPanel form={visionForm} error={visionError} visionModel={settings.visionModel} onChange={updateVisionForm} onSubmit={handleAnalyzeImages} />
+            <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
+              <div className="grid grid-cols-2 gap-1">
+                {(["generate", "vision"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                      activeMode === mode
+                        ? "bg-slate-950 text-white shadow-sm"
+                        : "text-slate-500 hover:bg-white hover:text-slate-900"
+                    }`}
+                    onClick={() => setActiveMode(mode)}
+                  >
+                    {t(`workspace.modes.${mode}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {activeMode === "generate" ? (
+              <GenerationPanel form={form} error={formError} model={settings.model} onChange={updateForm} onSubmit={handleGenerate} />
+            ) : (
+              <VisionPanel form={visionForm} error={visionError} visionModel={settings.visionModel} onChange={updateVisionForm} onSubmit={handleAnalyzeImages} />
+            )}
+
             <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
 
               <div className="grid grid-cols-2 gap-1">

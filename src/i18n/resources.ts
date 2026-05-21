@@ -146,6 +146,10 @@ export const resources = {
 
           library: "Image Library",
         },
+        modes: {
+          generate: "Generate",
+          vision: "OCR",
+        },
       },
       library: {
         title: "Image Library",
@@ -412,6 +416,10 @@ export const resources = {
           tasks: "任务",
 
           library: "图片库",
+        },
+        modes: {
+          generate: "生成图片",
+          vision: "识图",
         },
       },
       library: {
