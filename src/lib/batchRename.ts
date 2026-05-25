@@ -1,5 +1,7 @@
 import JSZip from "jszip";
 
+export type NamingMode = "compact" | "descriptive";
+
 export interface RenameItem {
   id: string;
   originalName: string;
@@ -101,19 +103,34 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-const RENAME_PROMPT = `你是一个游戏美术资源管理助手。请根据图片内容，给出一个适合作为美术资源的文件名。
-格式要求：\`大类_特征_特征\`（例如：\`rock_mossy_dark\`、\`grass_yellow_dry\`）。
-注意：只需返回英文小写和下划线，不要包含任何序号、后缀或多余文字。`;
+const COMPACT_PROMPT = `You are a game art asset manager. Based on the image content, give a filename.
+Format: \`category_trait_trait\` (e.g. \`rock_mossy_dark\`, \`grass_yellow_dry\`).
+Rules: English lowercase and underscores only. No numbering, no extension, no extra text.`;
+
+const DESCRIPTIVE_PROMPT = `You are an accessibility expert writing alt-text as a filename.
+Structure: category_subcategory_description.
+The FIRST word MUST be the primary category (e.g. rock, grass, tree, tower, wall, water, sky).
+The SECOND word MUST be a subcategory or variant (e.g. boulder, moss, pine, brick, river, cloud).
+After that, describe key visual details: shape, direction, quantity, material, spatial relationships.
+Examples: \`rock_boulder_large_scattered_on_hillside\`, \`tree_pine_on_rock_leaning_left\`, \`tower_brick_two_story_with_flag\`, \`grass_dry_yellow_patches_near_river\`.
+Rules: English lowercase and underscores only. Keep it under 60 characters. No numbering, no extension, no extra text.`;
+
+const MAX_DESCRIPTIVE_NAME_LENGTH = 60;
 
 export async function callAIForName(params: {
   apiKey: string;
   baseUrl: string;
   model: string;
   imageBlob: Blob;
+  namingMode?: NamingMode;
   signal?: AbortSignal;
 }): Promise<string> {
-  const { apiKey, baseUrl, model, imageBlob, signal } = params;
+  const { apiKey, baseUrl, model, imageBlob, namingMode = "compact", signal } = params;
   const dataUrl = await blobToDataUrl(imageBlob);
+
+  const isDescriptive = namingMode === "descriptive";
+  const prompt = isDescriptive ? DESCRIPTIVE_PROMPT : COMPACT_PROMPT;
+  const detail = isDescriptive ? "auto" : "low";
 
   const endpoint = `${baseUrl.trim().replace(/\/$/, "")}/responses`;
   const body = {
@@ -122,8 +139,8 @@ export async function callAIForName(params: {
       {
         role: "user",
         content: [
-          { type: "input_text", text: RENAME_PROMPT },
-          { type: "input_image", image_url: dataUrl, detail: "low" },
+          { type: "input_text", text: prompt },
+          { type: "input_image", image_url: dataUrl, detail },
         ],
       },
     ],
@@ -151,7 +168,7 @@ export async function callAIForName(params: {
 
   const json = await res.json();
   const outputText = extractOutputText(json);
-  return sanitizeAIName(outputText);
+  return sanitizeAIName(outputText, namingMode);
 }
 
 function extractOutputText(parsed: unknown): string {
@@ -175,12 +192,16 @@ function extractOutputText(parsed: unknown): string {
   return "";
 }
 
-function sanitizeAIName(raw: string): string {
+function sanitizeAIName(raw: string, mode: NamingMode = "compact"): string {
   let name = raw.replace(/```/g, "").replace(/`/g, "").trim();
   name = name.split("\n")[0].trim();
   name = name.replace(/[^a-z0-9_]/gi, "_").toLowerCase();
   name = name.replace(/_+/g, "_").replace(/^_|_$/g, "");
-  return name || "unnamed";
+  if (!name) return "unnamed";
+  if (mode === "descriptive" && name.length > MAX_DESCRIPTIVE_NAME_LENGTH) {
+    name = name.slice(0, MAX_DESCRIPTIVE_NAME_LENGTH).replace(/_$/, "");
+  }
+  return name;
 }
 
 export function buildFinalName(aiName: string, originalName: string): string {

@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppSettings } from "../types";
 import type { RenameItem } from "../lib/batchRename";
+import type { NamingMode } from "../lib/batchRename";
 import {
   buildFinalName,
   callAIForName,
@@ -20,6 +21,7 @@ const ACCEPTED_FORMATS = ".jpg,.jpeg,.png,.webp,.tga,.bmp";
 export function BatchRenamePanel({ settings }: BatchRenamePanelProps) {
   const { t } = useTranslation();
   const [items, setItems] = useState<RenameItem[]>([]);
+  const [namingMode, setNamingMode] = useState<NamingMode>("compact");
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -107,6 +109,7 @@ export function BatchRenamePanel({ settings }: BatchRenamePanelProps) {
           baseUrl: settings.baseUrl,
           model: settings.visionModel,
           imageBlob: compressed,
+          namingMode,
           signal: controller.signal,
         });
         const finalName = buildFinalName(aiName, item.originalName);
@@ -130,7 +133,7 @@ export function BatchRenamePanel({ settings }: BatchRenamePanelProps) {
 
     setIsProcessing(false);
     abortRef.current = null;
-  }, [items, settings]);
+  }, [items, settings, namingMode]);
 
   const stopProcessing = useCallback(() => {
     abortRef.current?.abort();
@@ -181,6 +184,40 @@ export function BatchRenamePanel({ settings }: BatchRenamePanelProps) {
           accept={ACCEPTED_FORMATS}
           onChange={handleFileInput}
         />
+      </div>
+
+      {/* Naming mode toggle */}
+      <div className="flex items-center gap-3">
+        <span className="text-xs font-medium text-slate-600">{t("batchRename.namingMode")}</span>
+        <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+          <button
+            type="button"
+            className={`rounded-md px-3 py-1 text-xs font-medium transition ${
+              namingMode === "compact"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+            onClick={() => setNamingMode("compact")}
+          >
+            {t("batchRename.modeCompact")}
+          </button>
+          <button
+            type="button"
+            className={`rounded-md px-3 py-1 text-xs font-medium transition ${
+              namingMode === "descriptive"
+                ? "bg-white text-slate-900 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+            onClick={() => setNamingMode("descriptive")}
+          >
+            {t("batchRename.modeDescriptive")}
+          </button>
+        </div>
+        <span className="text-xs text-slate-400">
+          {namingMode === "compact"
+            ? t("batchRename.modeCompactHint")
+            : t("batchRename.modeDescriptiveHint")}
+        </span>
       </div>
 
       {/* Item list */}
