@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { listCachedImages, type CachedImageRecord } from "../lib/imageCache";
 import { copyText, downloadImage } from "../lib/download";
+import { downloadLibraryZip } from "../lib/libraryExport";
 import type { ImageCacheStats, ReuseParamsPayload } from "../types";
 import { ImageCacheSummary } from "./ImageCacheSummary";
 
@@ -10,6 +11,25 @@ const CARD_MIN_WIDTH = 240;
 const GRID_GAP = 16;
 const VIRTUAL_ROW_HEIGHT = 500;
 const OVERSCAN_ROWS = 2;
+const MARQUEE_THRESHOLD = 4;
+const AUTO_SCROLL_MARGIN = 80;
+const AUTO_SCROLL_SPEED = 14;
+
+interface MarqueeState {
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+  origin: Set<string>;
+  additive: boolean;
+}
+
+function rectsIntersect(
+  a: { left: number; right: number; top: number; bottom: number },
+  b: { left: number; right: number; top: number; bottom: number },
+): boolean {
+  return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
+}
 
 type LibraryImage = CachedImageRecord & {
   objectUrl: string;
@@ -51,8 +71,14 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
   const [messageKey, setMessageKey] = useState("");
   const [gridWidth, setGridWidth] = useState(0);
   const [viewport, setViewport] = useState({ scrollTop: 0, height: 0, gridTop: 0 });
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [marquee, setMarquee] = useState<MarqueeState | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const objectUrlsRef = useRef(new Set<string>());
   const virtualGridRef = useRef<HTMLDivElement | null>(null);
+  const lastClickedIdRef = useRef<string | null>(null);
+  const autoScrollRef = useRef<{ direction: -1 | 0 | 1; raf: number }>({ direction: 0, raf: 0 });
 
   const revokeObjectUrl = useCallback((url: string) => {
     URL.revokeObjectURL(url);
@@ -173,6 +199,255 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
     };
   }, [gridWidth, items, viewport]);
 
+  const layout = useMemo(() => {
+    const columnCount = getColumnCount(gridWidth);
+    const columnWidth =
+      columnCount > 0 && gridWidth > 0
+        ? (gridWidth - (columnCount - 1) * GRID_GAP) / columnCount
+        : CARD_MIN_WIDTH;
+    return { columnCount, columnWidth };
+  }, [gridWidth]);
+
+  const computeMarqueeHits = useCallback(
+    (m: MarqueeState): Set<string> => {
+      const { columnCount, columnWidth } = layout;
+      const r = {
+        left: Math.min(m.startX, m.currentX),
+        right: Math.max(m.startX, m.currentX),
+        top: Math.min(m.startY, m.currentY),
+        bottom: Math.max(m.startY, m.currentY),
+      };
+      const hits = new Set<string>();
+      const colStride = columnWidth + GRID_GAP;
+      const rowStride = VIRTUAL_ROW_HEIGHT + GRID_GAP;
+      for (let i = 0; i < items.length; i += 1) {
+        const row = Math.floor(i / columnCount);
+        const col = i % columnCount;
+        const box = {
+          left: col * colStride,
+          right: col * colStride + columnWidth,
+          top: row * rowStride,
+          bottom: row * rowStride + VIRTUAL_ROW_HEIGHT,
+        };
+        if (rectsIntersect(r, box)) {
+          hits.add(items[i].id);
+        }
+      }
+      return hits;
+    },
+    [items, layout],
+  );
+
+  const previewSelection = useMemo<Set<string> | null>(() => {
+    if (!marquee) {
+      return null;
+    }
+    const dx = Math.abs(marquee.currentX - marquee.startX);
+    const dy = Math.abs(marquee.currentY - marquee.startY);
+    if (dx < MARQUEE_THRESHOLD && dy < MARQUEE_THRESHOLD) {
+      return marquee.origin;
+    }
+    const hits = computeMarqueeHits(marquee);
+    if (marquee.additive) {
+      const merged = new Set(marquee.origin);
+      hits.forEach((id) => merged.add(id));
+      return merged;
+    }
+    return hits;
+  }, [marquee, computeMarqueeHits]);
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollRef.current.raf) {
+      cancelAnimationFrame(autoScrollRef.current.raf);
+      autoScrollRef.current.raf = 0;
+    }
+    autoScrollRef.current.direction = 0;
+  }, []);
+
+  const updateAutoScroll = useCallback((clientY: number) => {
+    let dir: -1 | 0 | 1 = 0;
+    if (clientY < AUTO_SCROLL_MARGIN) {
+      dir = -1;
+    } else if (clientY > window.innerHeight - AUTO_SCROLL_MARGIN) {
+      dir = 1;
+    }
+    if (dir === autoScrollRef.current.direction) {
+      return;
+    }
+    autoScrollRef.current.direction = dir;
+    if (dir === 0) {
+      if (autoScrollRef.current.raf) {
+        cancelAnimationFrame(autoScrollRef.current.raf);
+        autoScrollRef.current.raf = 0;
+      }
+      return;
+    }
+    if (autoScrollRef.current.raf) {
+      return;
+    }
+    const tick = () => {
+      if (autoScrollRef.current.direction === 0) {
+        autoScrollRef.current.raf = 0;
+        return;
+      }
+      window.scrollBy(0, autoScrollRef.current.direction * AUTO_SCROLL_SPEED);
+      autoScrollRef.current.raf = requestAnimationFrame(tick);
+    };
+    autoScrollRef.current.raf = requestAnimationFrame(tick);
+  }, []);
+
+  useEffect(() => {
+    if (!marquee) {
+      return;
+    }
+
+    function onMove(e: MouseEvent) {
+      const grid = virtualGridRef.current;
+      if (!grid) return;
+      const rect = grid.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      setMarquee((current) => (current ? { ...current, currentX: x, currentY: y } : current));
+      updateAutoScroll(e.clientY);
+    }
+
+    function onUp() {
+      stopAutoScroll();
+      setMarquee((current) => {
+        if (!current) return null;
+        const dx = Math.abs(current.currentX - current.startX);
+        const dy = Math.abs(current.currentY - current.startY);
+        if (dx < MARQUEE_THRESHOLD && dy < MARQUEE_THRESHOLD) {
+          return null;
+        }
+        const hits = computeMarqueeHits(current);
+        if (current.additive) {
+          const merged = new Set(current.origin);
+          hits.forEach((id) => merged.add(id));
+          setSelectedIds(merged);
+        } else {
+          setSelectedIds(hits);
+        }
+        return null;
+      });
+    }
+
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        stopAutoScroll();
+        setMarquee(null);
+      }
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [marquee, computeMarqueeHits, stopAutoScroll, updateAutoScroll]);
+
+  useEffect(() => {
+    return () => stopAutoScroll();
+  }, [stopAutoScroll]);
+
+  function handleGridMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    if (!selectionMode || e.button !== 0) {
+      return;
+    }
+    const target = e.target as HTMLElement;
+    // Skip when clicking inside a card; card click handles selection toggle.
+    if (target.closest("article")) {
+      return;
+    }
+    const grid = virtualGridRef.current;
+    if (!grid) return;
+    const rect = grid.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    e.preventDefault();
+    setMarquee({
+      startX: x,
+      startY: y,
+      currentX: x,
+      currentY: y,
+      origin: new Set(selectedIds),
+      additive: e.shiftKey || e.ctrlKey || e.metaKey,
+    });
+  }
+
+  function toggleSelectOne(id: string, e: React.MouseEvent) {
+    if (e.shiftKey && lastClickedIdRef.current && lastClickedIdRef.current !== id) {
+      const ids = items.map((i) => i.id);
+      const a = ids.indexOf(lastClickedIdRef.current);
+      const b = ids.indexOf(id);
+      if (a >= 0 && b >= 0) {
+        const [from, to] = a < b ? [a, b] : [b, a];
+        setSelectedIds((current) => {
+          const next = new Set(current);
+          for (let i = from; i <= to; i += 1) {
+            next.add(ids[i]);
+          }
+          return next;
+        });
+        lastClickedIdRef.current = id;
+        return;
+      }
+    }
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    lastClickedIdRef.current = id;
+  }
+
+  function enterSelectionMode() {
+    setSelectionMode(true);
+    setSelectedIds(new Set());
+    lastClickedIdRef.current = null;
+  }
+
+  function exitSelectionMode() {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+    setMarquee(null);
+    lastClickedIdRef.current = null;
+    stopAutoScroll();
+  }
+
+  function selectAllLoaded() {
+    setSelectedIds(new Set(items.map((i) => i.id)));
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function handleDownloadSelectedZip() {
+    if (isExporting) return;
+    const list = items.filter((i) => selectedIds.has(i.id));
+    if (list.length === 0) return;
+    setIsExporting(true);
+    setMessageKey("");
+    try {
+      await downloadLibraryZip(list);
+      setMessageKey("library.messages.zipDownloadStarted");
+    } catch (error) {
+      console.warn("[openai-image-webui] Failed to export ZIP", error);
+      setMessageKey("library.messages.zipFailed");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
+
   async function handleLoadMore() {
     if (isLoading) {
       return;
@@ -236,19 +511,53 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
   }
 
   function renderCard(item: LibraryImage) {
+    const isSelected = selectedIds.has(item.id) || (previewSelection ? previewSelection.has(item.id) : false);
+    const cardClass = [
+      "relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition",
+      isSelected ? "border-sky-500 ring-2 ring-sky-300" : "border-slate-200",
+      selectionMode ? "cursor-pointer select-none" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const onCardClick = selectionMode
+      ? (e: React.MouseEvent<HTMLElement>) => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleSelectOne(item.id, e);
+        }
+      : undefined;
+
     return (
-      <article key={item.id} className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <article
+        key={item.id}
+        className={cardClass}
+        onClickCapture={onCardClick}
+        onMouseDownCapture={selectionMode ? (e) => e.stopPropagation() : undefined}
+      >
+        {selectionMode ? (
+          <div
+            className={`pointer-events-none absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-bold ${
+              isSelected ? "border-sky-500 bg-sky-500 text-white" : "border-white bg-white/70 text-transparent"
+            }`}
+            aria-hidden
+          >
+            ✓
+          </div>
+        ) : null}
         <button
           type="button"
           className="block h-56 w-full shrink-0 bg-slate-100"
           onClick={() => onPreview(item.objectUrl)}
           aria-label={t("library.previewImage")}
+          tabIndex={selectionMode ? -1 : 0}
         >
           <img
             className="h-full w-full object-cover"
             src={item.objectUrl}
             alt={item.prompt || t("library.unknownPrompt")}
             loading="lazy"
+            draggable={false}
           />
         </button>
         <div className="flex min-h-0 flex-1 flex-col space-y-3 p-3">
@@ -274,6 +583,7 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
               onClick={() => onPreview(item.objectUrl)}
+              tabIndex={selectionMode ? -1 : 0}
             >
               {t("tasks.actions.preview")}
             </button>
@@ -281,6 +591,7 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
               type="button"
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
               onClick={() => void handleDownload(item)}
+              tabIndex={selectionMode ? -1 : 0}
             >
               {t("tasks.actions.download")}
             </button>
@@ -289,6 +600,7 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
               disabled={!item.prompt}
               onClick={() => void handleCopyPrompt(item)}
+              tabIndex={selectionMode ? -1 : 0}
             >
               {t("tasks.actions.copyPrompt")}
             </button>
@@ -296,6 +608,7 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
               type="button"
               className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
               onClick={() => handleReuseFromLibrary(item)}
+              tabIndex={selectionMode ? -1 : 0}
             >
               {t("tasks.actions.reuseParams")}
             </button>
@@ -303,6 +616,7 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
               type="button"
               className="rounded-lg border border-rose-100 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:border-rose-200 hover:bg-rose-50"
               onClick={() => handleDelete(item)}
+              tabIndex={selectionMode ? -1 : 0}
             >
               {t("tasks.actions.delete")}
             </button>
@@ -330,6 +644,59 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
 
       {messageKey ? <div className="mb-4 text-xs text-emerald-600">{t(messageKey)}</div> : null}
 
+      {items.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          {!selectionMode ? (
+            <button
+              type="button"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              onClick={enterSelectionMode}
+            >
+              {t("library.selection.enter")}
+            </button>
+          ) : (
+            <>
+              <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-medium text-sky-700">
+                {t("library.selection.count", { count: selectedIds.size })}
+              </span>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                onClick={selectAllLoaded}
+              >
+                {t("library.selection.selectAll")}
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                disabled={selectedIds.size === 0}
+                onClick={clearSelection}
+              >
+                {t("library.selection.clear")}
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-sky-300 bg-sky-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-slate-300"
+                disabled={selectedIds.size === 0 || isExporting}
+                onClick={() => void handleDownloadSelectedZip()}
+              >
+                {isExporting
+                  ? t("library.selection.zipPacking")
+                  : t("library.selection.downloadZip", { count: selectedIds.size })}
+              </button>
+              <button
+                type="button"
+                className="ml-auto rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                onClick={exitSelectionMode}
+              >
+                {t("library.selection.exit")}
+              </button>
+              <p className="basis-full text-xs text-slate-400">{t("library.selection.hint")}</p>
+            </>
+          )}
+        </div>
+      ) : null}
+
       {items.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-14 text-center text-sm text-slate-500">
           {isLoading ? t("library.loading") : t("library.empty")}
@@ -338,8 +705,9 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
         <>
           <div
             ref={virtualGridRef}
-            className="relative"
+            className={`relative ${selectionMode ? "select-none" : ""}`}
             style={{ height: virtualGrid.totalHeight }}
+            onMouseDown={handleGridMouseDown}
           >
             {virtualGrid.rows.map((row) => (
               <div
@@ -355,6 +723,17 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
                 {row.items.map(renderCard)}
               </div>
             ))}
+            {marquee ? (
+              <div
+                className="pointer-events-none absolute z-20 rounded-sm border-2 border-sky-400 bg-sky-300/20"
+                style={{
+                  left: Math.min(marquee.startX, marquee.currentX),
+                  top: Math.min(marquee.startY, marquee.currentY),
+                  width: Math.abs(marquee.currentX - marquee.startX),
+                  height: Math.abs(marquee.currentY - marquee.startY),
+                }}
+              />
+            ) : null}
           </div>
 
           {hasMore ? (
