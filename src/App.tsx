@@ -396,20 +396,19 @@ export default function App() {
       <div className="mx-auto max-w-7xl">
         <Header taskCount={tasks.length} onClearTasks={clearTasks} />
 
-        <main className="grid gap-6 lg:grid-cols-[360px_1fr]">
-          <aside className="space-y-6">
+        <main className="grid gap-6 grid-cols-1 lg:grid-cols-[380px_1fr] items-start">
+          {/* LEFT COLUMN: SUPER CONTROL CENTER (STICKY ON DESKTOP) */}
+          <aside className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-2 space-y-6">
             <SettingsPanel settings={settings} onChange={setSettings} onReset={resetSettings} />
-            <Notice>{t("notice.cors")}</Notice>
-          </aside>
 
-          <div className="space-y-6">
+            {/* Workspace Mode Selection (Tabs) */}
             <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
               <div className="grid grid-cols-4 gap-1">
                 {(["generate", "vision", "batch", "rename"] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
-                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                    className={`rounded-xl px-2 py-2 text-xs font-semibold transition truncate ${
                       activeMode === mode
                         ? "bg-slate-950 text-white shadow-sm"
                         : "text-slate-500 hover:bg-white hover:text-slate-900"
@@ -422,6 +421,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* Active Input Panel */}
             {activeMode === "generate" ? (
               <GenerationPanel form={form} error={formError} model={settings.model} onChange={updateForm} onSubmit={handleGenerate} />
             ) : activeMode === "vision" ? (
@@ -443,8 +443,13 @@ export default function App() {
               <BatchRenamePanel settings={settings} />
             )}
 
-            <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
+            <Notice>{t("notice.cors")}</Notice>
+          </aside>
 
+          {/* RIGHT COLUMN: PURE GALLERY / OUTPUT PANEL */}
+          <div className="space-y-6">
+            {/* Viewport Select Tab (Tasks vs Library) */}
+            <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
               <div className="grid grid-cols-2 gap-1">
                 {(["tasks", "library"] as const).map((panel) => (
                   <button
@@ -463,6 +468,7 @@ export default function App() {
               </div>
             </div>
 
+            {/* Active Output Area (Tasks or Library Grid) */}
             {activePanel === "tasks" ? (
               <TaskQueue
                 tasks={tasks}
@@ -482,8 +488,6 @@ export default function App() {
                 onReuseParams={(payload) => handleReuseParams(payload)}
               />
             )}
-
-
           </div>
         </main>
       </div>

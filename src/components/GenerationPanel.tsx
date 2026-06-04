@@ -596,73 +596,86 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
         </div>
 
         {/* Common sizes grouped by aspect ratio */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-          <p className="text-xs font-medium text-slate-600">{t("generation.commonSizes")}</p>
-          <p className="mt-1 text-xs text-slate-500">{t("generation.commonSizesHint")}</p>
-
-          <div className="mt-2 space-y-2">
-            {sizePresetGroups.map((group) => (
-              <div key={group.ratio}>
-                <p className="mb-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                  {group.ratio}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {group.sizes.map((size) => (
-                    <button
-                      key={size}
-                      type="button"
-                      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
-                        isSizeActive(size)
-                          ? "border-emerald-400 bg-emerald-50 text-emerald-700"
-                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                      }`}
-                      onClick={() => applySize(size)}
-                    >
-                      {size}
-                    </button>
-                  ))}
+        <details className="group rounded-xl border border-slate-200 bg-slate-50/70 p-3 outline-none [&_summary::-webkit-details-marker]:hidden">
+          <summary className="cursor-pointer text-xs font-medium text-slate-600 select-none flex items-center justify-between list-none focus:outline-none">
+            <span>{t("generation.commonSizes")}</span>
+            <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div className="mt-2.5">
+            <p className="text-xs text-slate-500 mb-2">{t("generation.commonSizesHint")}</p>
+            <div className="space-y-2">
+              {sizePresetGroups.map((group) => (
+                <div key={group.ratio}>
+                  <p className="mb-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                    {group.ratio}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {group.sizes.map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                          isSizeActive(size)
+                            ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                        onClick={() => applySize(size)}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent sizes */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-          <p className="text-xs font-medium text-slate-600">{t("generation.recentSizes")}</p>
-          {recentSizes.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {recentSizes.map((size) => (
-                <button
-                  key={size}
-                  type="button"
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                    isSizeActive(size)
-                      ? "border-amber-400 bg-amber-50 text-amber-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  }`}
-                  onClick={() => applySize(size)}
-                >
-                  {size}
-                </button>
               ))}
             </div>
-          ) : (
-            <p className="mt-2 text-xs text-slate-500">{t("generation.recentSizesEmpty")}</p>
-          )}
-        </div>
+          </div>
+        </details>
 
-        <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-slate-700">
-            {t("generation.advancedJsonParams")}
-          </span>
-          <textarea
-            className="min-h-28 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 font-mono text-sm outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-            placeholder={'{\n  "quality": "high",\n  "style": "vivid"\n}'}
-            value={form.advancedJson}
-            onChange={(event) => onChange({ advancedJson: event.target.value })}
-          />
-        </label>
+        {/* Recent sizes */}
+        <details className="group rounded-xl border border-slate-200 bg-slate-50/70 p-3 outline-none [&_summary::-webkit-details-marker]:hidden">
+          <summary className="cursor-pointer text-xs font-medium text-slate-600 select-none flex items-center justify-between list-none focus:outline-none">
+            <span>{t("generation.recentSizes")}</span>
+            <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div className="mt-2.5">
+            {recentSizes.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {recentSizes.map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      isSizeActive(size)
+                        ? "border-amber-400 bg-amber-50 text-amber-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                    onClick={() => applySize(size)}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">{t("generation.recentSizesEmpty")}</p>
+            )}
+          </div>
+        </details>
+
+        {/* Advanced JSON Params */}
+        <details className="group rounded-xl border border-slate-200 bg-slate-50/70 p-3 outline-none [&_summary::-webkit-details-marker]:hidden">
+          <summary className="cursor-pointer text-xs font-medium text-slate-600 select-none flex items-center justify-between list-none focus:outline-none">
+            <span>{t("generation.advancedJsonParams")}</span>
+            <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div className="mt-2.5">
+            <textarea
+              className="min-h-24 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 font-mono text-xs outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+              placeholder={'{\n  "quality": "high",\n  "style": "vivid"\n}'}
+              value={form.advancedJson}
+              onChange={(event) => onChange({ advancedJson: event.target.value })}
+            />
+          </div>
+        </details>
 
         {error ? <Notice variant="error">{error}</Notice> : null}
 
