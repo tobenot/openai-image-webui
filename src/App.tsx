@@ -9,14 +9,17 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { TaskQueue } from "./components/TaskQueue";
 import { VisionPanel } from "./components/VisionPanel";
 import { BatchRenamePanel } from "./components/BatchRenamePanel";
+import { BatchGenerationPanel } from "./components/BatchGenerationPanel";
 
 
 import { useImageTasks } from "./hooks/useImageTasks";
 import { useSettings } from "./hooks/useSettings";
 import { toFriendlyError } from "./lib/errors";
 import { parseAdvancedJson } from "./lib/parseAdvancedJson";
-import { DEFAULT_FORM, DEFAULT_VISION_FORM } from "./lib/storage";
-import type { AppSettings, GenerateFormState, ImageTask, InputImageFile, ReuseParamsPayload, VisionFormState } from "./types";
+import { DEFAULT_BATCH_FORM, DEFAULT_FORM, DEFAULT_VISION_FORM, loadBatchPrompts, saveBatchPrompts } from "./lib/storage";
+import { createBatchId, parsePromptList } from "./lib/promptList";
+import { downloadBatchZip } from "./lib/batchExport";
+import type { AppSettings, BatchFormState, GenerateFormState, ImageTask, InputImageFile, ReuseParamsPayload, VisionFormState } from "./types";
 
 
 function validateRequest(
@@ -88,15 +91,40 @@ function validateVisionRequest(
 }
 
 type WorkspacePanel = "tasks" | "library";
-type WorkspaceMode = "generate" | "vision" | "rename";
+type WorkspaceMode = "generate" | "vision" | "rename" | "batch";
 
 export default function App() {
   const { i18n, t } = useTranslation();
   const { settings, setSettings, resetSettings } = useSettings();
   const [form, setForm] = useState<GenerateFormState>(DEFAULT_FORM);
   const [visionForm, setVisionForm] = useState<VisionFormState>(DEFAULT_VISION_FORM);
+  const [batchForm, setBatchForm] = useState<BatchFormState>(() => ({
+    ...DEFAULT_BATCH_FORM,
+    promptsText: loadBatchPrompts(),
+  }));
   const [formError, setFormError] = useState("");
   const [visionError, setVisionError] = useState("");
+  const [batchError, setBatchError] = useState("");
+  const [currentBatchId, setCurrentBatchId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("openai-image-webui:current-batch-id");
+    } catch {
+      return null;
+    }
+  });
+  const [isExportingBatch, setIsExportingBatch] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (currentBatchId) {
+        localStorage.setItem("openai-image-webui:current-batch-id", currentBatchId);
+      } else {
+        localStorage.removeItem("openai-image-webui:current-batch-id");
+      }
+    } catch {
+      // Ignore localStorage failures.
+    }
+  }, [currentBatchId]);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("tasks");
@@ -107,6 +135,8 @@ export default function App() {
     cacheStats,
     addTasks,
     addVisionTask,
+    addBatchTasks,
+    retryBatchErrors,
     retryTask,
 
     cancelTask,
@@ -143,6 +173,16 @@ export default function App() {
 
   function updateVisionForm(next: Partial<VisionFormState>) {
     setVisionForm((current) => ({ ...current, ...next }));
+  }
+
+  function updateBatchForm(next: Partial<BatchFormState>) {
+    setBatchForm((current) => {
+      const merged = { ...current, ...next };
+      if (typeof next.promptsText === "string") {
+        saveBatchPrompts(next.promptsText);
+      }
+      return merged;
+    });
   }
 
   function handleReuseParams(payload: ReuseParamsPayload) {
@@ -287,6 +327,69 @@ export default function App() {
     }
   }
 
+  function handleBatchGenerate() {
+    setBatchError("");
+
+    try {
+      if (!settings.apiKey.trim()) throw new Error(t("errors.apiKeyRequired"));
+      if (!settings.baseUrl.trim()) throw new Error(t("errors.apiBaseUrlRequired"));
+      if (!settings.model.trim()) throw new Error(t("errors.modelRequired"));
+
+      const parsed = parsePromptList(batchForm.promptsText);
+      if (parsed.prompts.length === 0) {
+        throw new Error(t("errors.batchPromptsRequired"));
+      }
+
+      const extraParams = parseAdvancedJson(batchForm.advancedJson, {
+        invalidJson: t("errors.advancedJsonInvalid"),
+        mustBeObject: t("errors.advancedJsonObject"),
+      });
+
+      const batchId = createBatchId();
+      addBatchTasks({
+        prompts: parsed.prompts,
+        inputImages: batchForm.inputImages,
+        size: batchForm.size.trim() || "1024x1024",
+        countPerPrompt: Math.max(1, Math.floor(batchForm.countPerPrompt || 1)),
+        extraParams,
+        batchId,
+      });
+      setCurrentBatchId(batchId);
+      setActivePanel("tasks");
+    } catch (error) {
+      setBatchError(
+        toFriendlyError(error, {
+          unknown: t("errors.unknown"),
+          requestFailed: t("errors.requestFailed"),
+        }),
+      );
+    }
+  }
+
+  function handleRetryBatchErrors() {
+    if (!currentBatchId) return;
+    const restoreFiles = batchForm.inputImages.map((item) => item.file);
+    retryBatchErrors(currentBatchId, restoreFiles.length > 0 ? restoreFiles : undefined);
+  }
+
+  async function handleExportBatch() {
+    if (!currentBatchId) return;
+    setIsExportingBatch(true);
+    try {
+      const result = await downloadBatchZip(tasks, currentBatchId);
+      setToast(t("batch.actions.exportDone", { exported: result.exported, missing: result.missing }));
+    } catch (error) {
+      setBatchError(
+        toFriendlyError(error, {
+          unknown: t("errors.unknown"),
+          requestFailed: t("errors.requestFailed"),
+        }),
+      );
+    } finally {
+      setIsExportingBatch(false);
+    }
+  }
+
   return (
 
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#e0f2fe,_transparent_34rem),linear-gradient(135deg,_#f8fafc,_#eef2ff)] px-4 py-6 text-slate-900 md:px-8">
@@ -301,8 +404,8 @@ export default function App() {
 
           <div className="space-y-6">
             <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
-              <div className="grid grid-cols-3 gap-1">
-                {(["generate", "vision", "rename"] as const).map((mode) => (
+              <div className="grid grid-cols-4 gap-1">
+                {(["generate", "vision", "batch", "rename"] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
@@ -323,6 +426,19 @@ export default function App() {
               <GenerationPanel form={form} error={formError} model={settings.model} onChange={updateForm} onSubmit={handleGenerate} />
             ) : activeMode === "vision" ? (
               <VisionPanel form={visionForm} error={visionError} visionModel={settings.visionModel} onChange={updateVisionForm} onSubmit={handleAnalyzeImages} />
+            ) : activeMode === "batch" ? (
+              <BatchGenerationPanel
+                form={batchForm}
+                error={batchError}
+                model={settings.model}
+                tasks={tasks}
+                currentBatchId={currentBatchId}
+                isExporting={isExportingBatch}
+                onChange={updateBatchForm}
+                onSubmit={handleBatchGenerate}
+                onRetryBatchErrors={handleRetryBatchErrors}
+                onExportBatch={() => void handleExportBatch()}
+              />
             ) : (
               <BatchRenamePanel settings={settings} />
             )}

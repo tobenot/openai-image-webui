@@ -49,6 +49,19 @@ export interface VisionFormState {
   detail: VisionDetail;
 }
 
+/**
+ * Batch generation form: a list of prompts (one per line) sharing the same
+ * reference images / size / advanced params. Reference images are optional —
+ * when empty the batch runs as text-to-image, otherwise as edits.
+ */
+export interface BatchFormState {
+  promptsText: string;
+  size: string;
+  advancedJson: string;
+  inputImages: InputImageFile[];
+  countPerPrompt: number;
+}
+
 export interface ImageTaskDebug {
 
   endpoint: string;

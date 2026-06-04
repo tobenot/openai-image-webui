@@ -1,10 +1,13 @@
-import type { AppSettings, GenerateFormState, ImageTask, ImageTaskStatus, VisionFormState } from "../types";
+import type { AppSettings, BatchFormState, GenerateFormState, ImageTask, ImageTaskStatus, VisionFormState } from "../types";
 
 
 export const STORAGE_KEYS = {
   settings: "openai-image-webui:settings",
   tasks: "openai-image-webui:tasks",
+  batchPrompts: "openai-image-webui:batch-prompts",
 } as const;
+
+const PERSISTED_TASKS_LIMIT = 500;
 
 export const DEFAULT_VISION_PROMPT =
   "请用中文详细描述这张图片的内容：画面中有什么、表达了什么意思、关键信息是什么。如果图中有文字，也一并提取出来。";
@@ -32,6 +35,14 @@ export const DEFAULT_VISION_FORM: VisionFormState = {
   advancedJson: "",
   inputImages: [],
   detail: "high",
+};
+
+export const DEFAULT_BATCH_FORM: BatchFormState = {
+  promptsText: "",
+  size: "1024x1024",
+  advancedJson: "",
+  inputImages: [],
+  countPerPrompt: 1,
 };
 
 
@@ -156,6 +167,22 @@ function toPersistedTask(task: ImageTask): ImageTask {
 }
 
 export function saveTasks(tasks: ImageTask[]) {
-  writeJson(STORAGE_KEYS.tasks, tasks.slice(-100).map(toPersistedTask));
+  writeJson(STORAGE_KEYS.tasks, tasks.slice(-PERSISTED_TASKS_LIMIT).map(toPersistedTask));
+}
+
+export function loadBatchPrompts(): string {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.batchPrompts) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+export function saveBatchPrompts(value: string) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.batchPrompts, value);
+  } catch {
+    // Ignore localStorage quota or privacy-mode failures.
+  }
 }
 

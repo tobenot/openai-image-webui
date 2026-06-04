@@ -16,7 +16,10 @@ import { buildCompatibleImageRequest } from "../lib/imageSizing";
 import { estimateImageCost, estimateTokenCost, extractUsageFromRaw } from "../lib/pricing";
 import { loadTasks, saveTasks } from "../lib/storage";
 import { generateThumbnail } from "../lib/thumbnail";
-import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask, VisionFormState } from "../types";
+import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask, InputImageFile, VisionFormState } from "../types";
+
+const BATCH_ID_KEY = "_batchId";
+const BATCH_INDEX_KEY = "_batchIndex";
 
 interface PendingTaskInputs {
   images: File[];
@@ -333,6 +336,7 @@ export function useImageTasks(settings: AppSettings) {
                   : item,
               ),
             );
+            pendingInputsRef.current.delete(task.id);
             return;
           }
 
@@ -393,6 +397,7 @@ export function useImageTasks(settings: AppSettings) {
                 : item,
             ),
           );
+          pendingInputsRef.current.delete(task.id);
         } catch (error) {
           const wasAborted = controller.signal.aborted;
           const debug = wasAborted ? undefined : getImageGenerationDebug(error) ?? getVisionAnalysisDebug(error);
@@ -410,9 +415,11 @@ export function useImageTasks(settings: AppSettings) {
                 : item,
             ),
           );
+          // Keep pendingInputs around for failed/cancelled tasks so the user
+          // (or retryBatchErrors) can retry without re-uploading. Only delete
+          // on success — see the success branch above.
         } finally {
           controllersRef.current.delete(task.id);
-          pendingInputsRef.current.delete(task.id);
         }
       })();
     },
@@ -585,6 +592,103 @@ export function useImageTasks(settings: AppSettings) {
     }
   }
 
+  /**
+   * Enqueue a batch of generation tasks driven by a prompt list. All tasks in
+   * the batch share the same reference images, size, and advanced params.
+   * Each task is tagged with `_batchId` / `_batchIndex` in extraParams; those
+   * keys are stripped before sending to the API (see api/openaiImages.ts).
+   */
+  function addBatchTasks(input: {
+    prompts: string[];
+    inputImages: InputImageFile[];
+    size: string;
+    countPerPrompt: number;
+    extraParams: Record<string, unknown>;
+    batchId: string;
+  }) {
+    const { prompts, inputImages, size, countPerPrompt, extraParams, batchId } = input;
+    if (prompts.length === 0) return;
+
+    const now = Date.now();
+    const currentSettings = settingsRef.current;
+    const model = currentSettings.model.trim();
+    const inputImageFiles = inputImages.map((item) => item.file);
+    const isEdit = inputImageFiles.length > 0;
+    const count = Math.max(1, Math.floor(countPerPrompt || 1));
+
+    const newTasks: ImageTask[] = [];
+    let batchIndex = 0;
+
+    for (const prompt of prompts) {
+      for (let c = 0; c < count; c += 1) {
+        const compatible = buildCompatibleImageRequest({
+          model,
+          prompt,
+          size,
+          extraParams,
+        });
+        const id = createTaskId();
+        const taskExtra: Record<string, unknown> = {
+          ...compatible.extraParams,
+          [BATCH_ID_KEY]: batchId,
+          [BATCH_INDEX_KEY]: batchIndex,
+        };
+
+        if (isEdit) {
+          pendingInputsRef.current.set(id, {
+            images: inputImageFiles,
+            mask: null,
+          });
+        }
+
+        newTasks.push({
+          id,
+          mode: isEdit ? "edit" : "generate",
+          prompt: compatible.prompt,
+          model,
+          size: compatible.size,
+          responseFormat: currentSettings.responseFormat,
+          status: "pending",
+          createdAt: now + batchIndex,
+          extraParams: taskExtra,
+          inputImageCount: isEdit ? inputImageFiles.length : undefined,
+        });
+
+        batchIndex += 1;
+      }
+    }
+
+    setTasks((current) => [...current, ...newTasks]);
+  }
+
+  /**
+   * Retry every error-state task that belongs to the given batch. If the
+   * batch was an edit, callers should pass the still-in-memory File blobs so
+   * the retry has something to upload (pendingInputs is cleared after each
+   * task finishes).
+   */
+  function retryBatchErrors(batchId: string, restoreInputImageFiles?: File[]) {
+    const targets = tasksRef.current.filter((task) => {
+      const id = task.extraParams?.[BATCH_ID_KEY];
+      return id === batchId && task.status === "error";
+    });
+
+    for (const task of targets) {
+      if (
+        task.mode === "edit" &&
+        restoreInputImageFiles &&
+        restoreInputImageFiles.length > 0 &&
+        !pendingInputsRef.current.has(task.id)
+      ) {
+        pendingInputsRef.current.set(task.id, {
+          images: restoreInputImageFiles,
+          mask: null,
+        });
+      }
+      retryTask(task.id);
+    }
+  }
+
   function retryTask(id: string) {
 
     if (controllersRef.current.has(id)) {
@@ -738,6 +842,8 @@ export function useImageTasks(settings: AppSettings) {
     cacheStats,
     addTasks,
     addVisionTask,
+    addBatchTasks,
+    retryBatchErrors,
     retryTask,
 
     cancelTask,

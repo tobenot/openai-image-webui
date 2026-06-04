@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { ImageTask } from "../types";
 import { TaskCard } from "./TaskCard";
 
-const MAX_RENDERED_TASKS = 100;
+const MAX_RENDERED_TASKS = 200;
 
 interface TaskQueueProps {
   tasks: ImageTask[];

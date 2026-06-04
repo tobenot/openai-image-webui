@@ -162,6 +162,21 @@ function joinBaseUrl(baseUrl: string, path: string) {
   return `${baseUrl.trim().replace(/\/$/, "")}${path}`;
 }
 
+/**
+ * Drop keys starting with `_` from an extraParams object before sending to
+ * the API. Such keys are reserved for internal metadata (e.g. `_batchId`,
+ * `_batchIndex`) and must not leak into the request body.
+ */
+function stripInternalParams(params: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (!key.startsWith("_")) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 export async function generateImage(
   params: GenerateImageParams,
 ): Promise<GenerateImageResult> {
@@ -179,13 +194,14 @@ export async function generateImage(
   assertBasicParams(params);
 
   const endpoint = joinBaseUrl(baseUrl, "/images/generations");
+  const cleanExtra = stripInternalParams(extraParams);
   const body = {
     model: model.trim(),
     prompt: prompt.trim(),
     n: 1,
     ...(size?.trim() ? { size: size.trim() } : {}),
     ...(responseFormat ? { response_format: responseFormat } : {}),
-    ...extraParams,
+    ...cleanExtra,
   };
   const debug = createDebug(endpoint, body);
 
@@ -269,7 +285,8 @@ export async function editImage(params: EditImageParams): Promise<GenerateImageR
   }
 
   // Passthrough of quality / background / output_format / seed / etc.
-  for (const [key, value] of Object.entries(extraParams)) {
+  const cleanExtra = stripInternalParams(extraParams);
+  for (const [key, value] of Object.entries(cleanExtra)) {
     if (value === undefined || value === null) continue;
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       form.append(key, String(value));
@@ -290,7 +307,7 @@ export async function editImage(params: EditImageParams): Promise<GenerateImageR
     imageNames: images.map((f) => `${f.name} (${f.type}, ${f.size}B)`),
     hasMask: Boolean(mask),
     maskName: mask ? `${mask.name} (${mask.type}, ${mask.size}B)` : undefined,
-    extraParams,
+    extraParams: cleanExtra,
   };
   const debug = createDebug(endpoint, debugBody);
 
