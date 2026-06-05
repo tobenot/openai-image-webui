@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { useRef, useState, memo, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { InputImageError, prepareInputImage } from "../lib/imageInput";
 import type { InputImageFile, VisionDetail, VisionFormState } from "../types";
@@ -191,4 +191,4 @@ export function VisionPanel({ form, error, visionModel, onChange, onSubmit }: Vi
       </form>
     </section>
   );
-}
+});

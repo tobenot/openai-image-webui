@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { useMemo, useRef, useState, memo, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { BatchFormState, ImageTask, InputImageFile } from "../types";
 import {
@@ -27,7 +27,7 @@ interface BatchGenerationPanelProps {
 const COMMON_SIZES = ["512x512", "1024x1024", "1024x1536", "1536x1024", "1024x1792", "1792x1024"];
 const PROMPT_FILE_ACCEPT = ".txt,.md,.csv,text/plain,text/markdown,text/csv";
 
-export function BatchGenerationPanel({
+export const BatchGenerationPanel = memo(function BatchGenerationPanel({
   form,
   error,
   model,
@@ -376,4 +376,4 @@ export function BatchGenerationPanel({
       ) : null}
     </section>
   );
-}
+});

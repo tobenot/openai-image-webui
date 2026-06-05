@@ -78,7 +78,7 @@ const MODEL_CATEGORY_LABEL_KEYS: Record<ModelCapability, string> = {
 };
 
 
-export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProps) {
+export const SettingsPanel = memo(function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProps) {
   const { t } = useTranslation();
   const datalistId = useId();
   const visionDatalistId = useId();
@@ -395,4 +395,4 @@ export function SettingsPanel({ settings, onChange, onReset }: SettingsPanelProp
       </div>
     </section>
   );
-}
+});

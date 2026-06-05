@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, memo } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppSettings } from "../types";
 import type { RenameItem } from "../lib/batchRename";
@@ -18,7 +18,7 @@ interface BatchRenamePanelProps {
 
 const ACCEPTED_FORMATS = ".jpg,.jpeg,.png,.webp,.tga,.bmp";
 
-export function BatchRenamePanel({ settings }: BatchRenamePanelProps) {
+export const BatchRenamePanel = memo(function BatchRenamePanel({ settings }: BatchRenamePanelProps) {
   const { t } = useTranslation();
   const [items, setItems] = useState<RenameItem[]>([]);
   const [namingMode, setNamingMode] = useState<NamingMode>("compact");
@@ -356,4 +356,4 @@ export function BatchRenamePanel({ settings }: BatchRenamePanelProps) {
       </div>
     </section>
   );
-}
+});

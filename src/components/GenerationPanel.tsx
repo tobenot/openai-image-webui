@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, memo, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { GenerateFormState, InputImageFile } from "../types";
 import {
@@ -129,7 +129,7 @@ function saveRecentSizes(sizes: string[]) {
   }
 }
 
-export function GenerationPanel({ form, error, model, onChange, onSubmit }: GenerationPanelProps) {
+export const GenerationPanel = memo(function GenerationPanel({ form, error, model, onChange, onSubmit }: GenerationPanelProps) {
   const { t } = useTranslation();
   const initialParsedSize = parseSize(form.size);
   const [sliderWidth, setSliderWidth] = useState(initialParsedSize?.width ?? DEFAULT_SIZE);
@@ -689,4 +689,4 @@ export function GenerationPanel({ form, error, model, onChange, onSubmit }: Gene
       </form>
     </section>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { listCachedImages, type CachedImageRecord } from "../lib/imageCache";
 import { copyText, downloadImage } from "../lib/download";
@@ -96,16 +96,51 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
     return { ...record, objectUrl };
   }, []);
 
-  const updateViewport = useCallback(() => {
-    const grid = virtualGridRef.current;
-    const gridTop = grid ? grid.getBoundingClientRect().top + window.scrollY : 0;
+  const gridTopRef = useRef(0);
 
-    setViewport({
-      scrollTop: window.scrollY,
-      height: window.innerHeight,
-      gridTop,
-    });
+  const updateGridTop = useCallback(() => {
+    const grid = virtualGridRef.current;
+    if (grid) {
+      gridTopRef.current = grid.getBoundingClientRect().top + window.scrollY;
+    }
   }, []);
+
+  const updateViewport = useCallback(() => {
+    const scrollTop = window.scrollY;
+    const height = window.innerHeight;
+
+    if (gridTopRef.current === 0) {
+      updateGridTop();
+    }
+
+    const rowStride = VIRTUAL_ROW_HEIGHT + GRID_GAP;
+    const gridScrollTop = scrollTop - gridTopRef.current;
+    const gridScrollBottom = gridScrollTop + height;
+
+    const startRow = Math.max(0, Math.floor(gridScrollTop / rowStride) - OVERSCAN_ROWS);
+    const endRow = Math.max(startRow, Math.ceil(gridScrollBottom / rowStride) + OVERSCAN_ROWS);
+
+    setViewport((prev) => {
+      const oldGridScrollTop = prev.scrollTop - prev.gridTop;
+      const oldGridScrollBottom = oldGridScrollTop + prev.height;
+      const oldStartRow = Math.max(0, Math.floor(oldGridScrollTop / rowStride) - OVERSCAN_ROWS);
+      const oldEndRow = Math.max(oldStartRow, Math.ceil(oldGridScrollBottom / rowStride) + OVERSCAN_ROWS);
+
+      if (
+        oldStartRow !== startRow ||
+        oldEndRow !== endRow ||
+        Math.abs(prev.gridTop - gridTopRef.current) > 2 ||
+        prev.height !== height
+      ) {
+        return {
+          scrollTop,
+          height,
+          gridTop: gridTopRef.current,
+        };
+      }
+      return prev;
+    });
+  }, [updateGridTop]);
 
   const loadFirstPage = useCallback(async () => {
     setIsLoading(true);
@@ -133,31 +168,42 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
   }, [clearObjectUrls]);
 
   useEffect(() => {
+    updateGridTop();
+    updateViewport();
+  }, [items.length, updateGridTop, updateViewport]);
+
+  useEffect(() => {
     let frame = 0;
 
-    function scheduleUpdate() {
+    function scheduleUpdate(forceMeasure = false) {
       if (frame) {
         return;
       }
 
       frame = window.requestAnimationFrame(() => {
         frame = 0;
+        if (forceMeasure) {
+          updateGridTop();
+        }
         updateViewport();
       });
     }
 
     const observer = new ResizeObserver(([entry]) => {
       setGridWidth(entry?.contentRect.width ?? 0);
-      scheduleUpdate();
+      scheduleUpdate(true);
     });
 
     if (virtualGridRef.current) {
       observer.observe(virtualGridRef.current);
     }
 
-    window.addEventListener("scroll", scheduleUpdate, { passive: true });
-    window.addEventListener("resize", scheduleUpdate);
-    scheduleUpdate();
+    const handleScroll = () => scheduleUpdate(false);
+    const handleResize = () => scheduleUpdate(true);
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleResize);
+    scheduleUpdate(true);
 
     return () => {
       if (frame) {
@@ -165,10 +211,10 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
       }
 
       observer.disconnect();
-      window.removeEventListener("scroll", scheduleUpdate);
-      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleResize);
     };
-  }, [items.length, updateViewport]);
+  }, [updateGridTop, updateViewport]);
 
 
   const virtualGrid = useMemo(() => {
@@ -510,124 +556,8 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
     onReuseParams(payload);
   }
 
-  function renderCard(item: LibraryImage) {
-    const isSelected = selectedIds.has(item.id) || (previewSelection ? previewSelection.has(item.id) : false);
-    const cardClass = [
-      "relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition",
-      isSelected ? "border-sky-500 ring-2 ring-sky-300" : "border-slate-200",
-      selectionMode ? "cursor-pointer select-none" : "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
-    const onCardClick = selectionMode
-      ? (e: React.MouseEvent<HTMLElement>) => {
-          e.preventDefault();
-          e.stopPropagation();
-          toggleSelectOne(item.id, e);
-        }
-      : undefined;
-
-    return (
-      <article
-        key={item.id}
-        className={cardClass}
-        onClickCapture={onCardClick}
-        onMouseDownCapture={selectionMode ? (e) => e.stopPropagation() : undefined}
-      >
-        {selectionMode ? (
-          <div
-            className={`pointer-events-none absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-bold ${
-              isSelected ? "border-sky-500 bg-sky-500 text-white" : "border-white bg-white/70 text-transparent"
-            }`}
-            aria-hidden
-          >
-            ✓
-          </div>
-        ) : null}
-        <button
-          type="button"
-          className="block h-56 w-full shrink-0 bg-slate-100"
-          onClick={() => onPreview(item.objectUrl)}
-          aria-label={t("library.previewImage")}
-          tabIndex={selectionMode ? -1 : 0}
-        >
-          <img
-            className="h-full w-full object-cover"
-            src={item.objectUrl}
-            alt={item.prompt || t("library.unknownPrompt")}
-            loading="lazy"
-            draggable={false}
-          />
-        </button>
-        <div className="flex min-h-0 flex-1 flex-col space-y-3 p-3">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <span>{new Date(item.taskCreatedAt || item.cachedAt).toLocaleString()}</span>
-            <span>{formatBytes(item.size)}</span>
-          </div>
-          <p className="line-clamp-2 min-h-10 text-sm leading-5 text-slate-700">
-            {item.prompt || t("library.unknownPrompt")}
-          </p>
-          <dl className="grid grid-cols-2 gap-2 text-xs text-slate-500">
-            <div className="rounded-lg bg-slate-50 p-2">
-              <dt className="font-medium text-slate-700">{t("tasks.fields.model")}</dt>
-              <dd className="mt-1 truncate">{item.model || t("library.unknownModel")}</dd>
-            </div>
-            <div className="rounded-lg bg-slate-50 p-2">
-              <dt className="font-medium text-slate-700">{t("tasks.fields.size")}</dt>
-              <dd className="mt-1">{item.generationSize || "-"}</dd>
-            </div>
-          </dl>
-          <div className="mt-auto flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
-              onClick={() => onPreview(item.objectUrl)}
-              tabIndex={selectionMode ? -1 : 0}
-            >
-              {t("tasks.actions.preview")}
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
-              onClick={() => void handleDownload(item)}
-              tabIndex={selectionMode ? -1 : 0}
-            >
-              {t("tasks.actions.download")}
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
-              disabled={!item.prompt}
-              onClick={() => void handleCopyPrompt(item)}
-              tabIndex={selectionMode ? -1 : 0}
-            >
-              {t("tasks.actions.copyPrompt")}
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
-              onClick={() => handleReuseFromLibrary(item)}
-              tabIndex={selectionMode ? -1 : 0}
-            >
-              {t("tasks.actions.reuseParams")}
-            </button>
-            <button
-              type="button"
-              className="rounded-lg border border-rose-100 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:border-rose-200 hover:bg-rose-50"
-              onClick={() => handleDelete(item)}
-              tabIndex={selectionMode ? -1 : 0}
-            >
-              {t("tasks.actions.delete")}
-            </button>
-          </div>
-        </div>
-      </article>
-    );
-  }
-
   return (
-    <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-soft">
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-950">{t("library.title")}</h2>
@@ -720,7 +650,24 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
                   gridTemplateColumns: `repeat(${virtualGrid.columnCount}, minmax(0, 1fr))`,
                 }}
               >
-                {row.items.map(renderCard)}
+                {row.items.map((item) => {
+                  const isSelected = selectedIds.has(item.id) || (previewSelection ? previewSelection.has(item.id) : false);
+                  return (
+                    <ImageCard
+                      key={item.id}
+                      item={item}
+                      isSelected={isSelected}
+                      selectionMode={selectionMode}
+                      t={t}
+                      onPreview={onPreview}
+                      onDownload={handleDownload}
+                      onCopyPrompt={handleCopyPrompt}
+                      onReuse={handleReuseFromLibrary}
+                      onDelete={handleDelete}
+                      onToggleSelect={toggleSelectOne}
+                    />
+                  );
+                })}
               </div>
             ))}
             {marquee ? (
@@ -752,4 +699,143 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
       )}
     </section>
   );
+}
+
+interface ImageCardProps {
+  item: LibraryImage;
+  isSelected: boolean;
+  selectionMode: boolean;
+  t: (key: string, options?: any) => string;
+  onPreview: (url: string) => void;
+  onDownload: (item: LibraryImage) => void;
+  onCopyPrompt: (item: LibraryImage) => void;
+  onReuse: (item: LibraryImage) => void;
+  onDelete: (item: LibraryImage) => void;
+  onToggleSelect: (id: string, e: React.MouseEvent) => void;
+}
+
+const ImageCard = memo(function ImageCard({
+  item,
+  isSelected,
+  selectionMode,
+  t,
+  onPreview,
+  onDownload,
+  onCopyPrompt,
+  onReuse,
+  onDelete,
+  onToggleSelect,
+}: ImageCardProps) {
+  const cardClass = [
+    "relative flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition",
+    isSelected ? "border-sky-500 ring-2 ring-sky-300" : "border-slate-200",
+    selectionMode ? "cursor-pointer select-none" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const onCardClick = selectionMode
+    ? (e: React.MouseEvent<HTMLElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleSelect(item.id, e);
+      }
+    : undefined;
+
+  return (
+    <article
+      className={cardClass}
+      onClickCapture={onCardClick}
+      onMouseDownCapture={selectionMode ? (e) => e.stopPropagation() : undefined}
+    >
+      {selectionMode ? (
+        <div
+          className={`pointer-events-none absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-bold ${
+            isSelected ? "border-sky-500 bg-sky-500 text-white" : "border-white bg-white/70 text-transparent"
+          }`}
+          aria-hidden
+        >
+          ✓
+        </div>
+      ) : null}
+      <button
+        type="button"
+        className="block h-56 w-full shrink-0 bg-slate-100"
+        onClick={() => onPreview(item.objectUrl)}
+        aria-label={t("library.previewImage")}
+        tabIndex={selectionMode ? -1 : 0}
+      >
+        <img
+          className="h-full w-full object-cover"
+          src={item.objectUrl}
+          alt={item.prompt || t("library.unknownPrompt")}
+          loading="lazy"
+          draggable={false}
+        />
+      </button>
+      <div className="flex min-h-0 flex-1 flex-col space-y-3 p-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <span>{new Date(item.taskCreatedAt || item.cachedAt).toLocaleString()}</span>
+          <span>{formatBytes(item.size)}</span>
+        </div>
+        <p className="line-clamp-2 min-h-10 text-sm leading-5 text-slate-700">
+          {item.prompt || t("library.unknownPrompt")}
+        </p>
+        <dl className="grid grid-cols-2 gap-2 text-xs text-slate-500">
+          <div className="rounded-lg bg-slate-50 p-2">
+            <dt className="font-medium text-slate-700">{t("tasks.fields.model")}</dt>
+            <dd className="mt-1 truncate">{item.model || t("library.unknownModel")}</dd>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-2">
+            <dt className="font-medium text-slate-700">{t("tasks.fields.size")}</dt>
+            <dd className="mt-1">{item.generationSize || "-"}</dd>
+          </div>
+        </dl>
+        <div className="mt-auto flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+            onClick={() => onPreview(item.objectUrl)}
+            tabIndex={selectionMode ? -1 : 0}
+          >
+            {t("tasks.actions.preview")}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+            onClick={() => void onDownload(item)}
+            tabIndex={selectionMode ? -1 : 0}
+          >
+            {t("tasks.actions.download")}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+            disabled={!item.prompt}
+            onClick={() => void onCopyPrompt(item)}
+            tabIndex={selectionMode ? -1 : 0}
+          >
+            {t("tasks.actions.copyPrompt")}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+            onClick={() => onReuse(item)}
+            tabIndex={selectionMode ? -1 : 0}
+          >
+            {t("tasks.actions.reuseParams")}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-rose-100 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:border-rose-200 hover:bg-rose-50"
+            onClick={() => onDelete(item)}
+            tabIndex={selectionMode ? -1 : 0}
+          >
+            {t("tasks.actions.delete")}
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+});
 }
