@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, memo } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchModels, type ModelCapability, type ModelInfo } from "../api/openaiModels";
 import { toFriendlyError } from "../lib/errors";

@@ -838,4 +838,3 @@ const ImageCard = memo(function ImageCard({
     </article>
   );
 });
-}
