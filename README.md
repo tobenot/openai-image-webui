@@ -23,7 +23,7 @@ Bring your own API key and endpoint.
 ## Quick Start
 
 ```bash
-git clone https://github.com/yourname/openai-image-webui.git
+git clone https://github.com/tobenot/openai-image-webui.git
 cd openai-image-webui
 npm install
 npm run dev
