@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { copyText, downloadImage, downloadText } from "../lib/download";
 import { formatCostUsd } from "../lib/pricing";
@@ -40,6 +40,16 @@ function actionButtonClass(disabled = false) {
   }`;
 }
 
+function menuItemClass(disabled = false, danger = false) {
+  return `block w-full rounded-lg px-3 py-2 text-left text-xs font-medium transition ${
+    disabled
+      ? "cursor-not-allowed text-slate-300"
+      : danger
+        ? "text-rose-600 hover:bg-rose-50"
+        : "text-slate-600 hover:bg-slate-50"
+  }`;
+}
+
 // Some persisted error strings are stored as i18n keys (e.g. "tasks.messages.taskCancelled")
 // so they can be re-translated when the user switches language. Anything else (such as
 // raw API error responses) is rendered as-is.
@@ -70,6 +80,8 @@ function formatTaskDebug(task: ImageTask, errorText: string) {
 export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClearImage, onReuseParams }: TaskCardProps) {
   const { t } = useTranslation();
   const [messageKey, setMessageKey] = useState<string>("");
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
   const isVisionTask = task.mode === "vision";
   const hasImage = Boolean(task.imageUrl);
   const hasStoredImage = hasImage || Boolean(task.imageCached);
@@ -77,6 +89,31 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClear
   const hasDebug = Boolean(task.debug);
 
   const canCancel = task.status === "pending" || task.status === "running";
+
+  useEffect(() => {
+    if (!actionsMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target as Node)) {
+        setActionsMenuOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setActionsMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [actionsMenuOpen]);
 
   async function handleCopyImage() {
     if (!task.imageUrl) {
@@ -157,9 +194,9 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClear
 
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <article className="rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="grid gap-0 md:grid-cols-[220px_1fr]">
-        <div className="flex min-h-52 items-center justify-center bg-slate-100">
+        <div className="flex min-h-52 items-center justify-center overflow-hidden rounded-t-2xl bg-slate-100 md:rounded-l-2xl md:rounded-tr-none">
           {isVisionTask ? (
             task.inputThumbnail ? (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4">
@@ -308,97 +345,159 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClear
 
           {messageKey ? <div className="mb-4 text-xs text-emerald-600">{t(messageKey)}</div> : null}
 
-          <div className="flex flex-wrap gap-2">
-            {isVisionTask ? (
-              <>
-                <button
-                  type="button"
-                  className={actionButtonClass(!hasOutputText)}
-                  disabled={!hasOutputText}
-                  onClick={() => void handleCopyOutputText()}
-                >
-                  {t("tasks.actions.copyOutput")}
-                </button>
-                <button
-                  type="button"
-                  className={actionButtonClass(!hasOutputText)}
-                  disabled={!hasOutputText}
-                  onClick={handleDownloadOutputText}
-                >
-                  {t("tasks.actions.downloadText")}
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className={actionButtonClass(!hasImage)}
-                  disabled={!hasImage}
-                  onClick={() => task.imageUrl && onPreview(task.imageUrl)}
-                >
-                  {t("tasks.actions.preview")}
-                </button>
-                <button
-                  type="button"
-                  className={actionButtonClass(!hasImage)}
-                  disabled={!hasImage}
-                  onClick={() => void handleDownload()}
-                >
-                  {t("tasks.actions.download")}
-                </button>
-                <button
-                  type="button"
-                  className={actionButtonClass(!hasImage)}
-                  disabled={!hasImage}
-                  onClick={() => void handleCopyImage()}
-                >
-                  {t("tasks.actions.copyImageUrl")}
-                </button>
-              </>
-            )}
-            <button type="button" className={actionButtonClass()} onClick={() => void handleCopyPrompt()}>
-              {t("tasks.actions.copyPrompt")}
-            </button>
-
-            <button
-              type="button"
-              className={actionButtonClass(!hasDebug)}
-              disabled={!hasDebug}
-              onClick={() => void handleCopyDebug()}
-            >
-              {t("tasks.actions.copyDebug")}
-            </button>
-            {!isVisionTask ? (
-              <>
-                <button
-                  type="button"
-                  className={actionButtonClass(!hasStoredImage)}
-                  disabled={!hasStoredImage}
-                  onClick={handleClearImage}
-                >
-                  {t("tasks.actions.deleteImageCache")}
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
-                  onClick={() => onReuseParams(task)}
-                >
-                  {t("tasks.actions.reuseParams")}
-                </button>
-              </>
+          <div className="flex flex-wrap items-center gap-2">
+            {!isVisionTask && hasImage ? (
+              <button
+                type="button"
+                className={actionButtonClass()}
+                onClick={() => task.imageUrl && onPreview(task.imageUrl)}
+              >
+                {t("tasks.actions.preview")}
+              </button>
             ) : null}
-
-            <button type="button" className={actionButtonClass()} onClick={() => onRetry(task.id)}>
-              {t("tasks.actions.retry")}
-            </button>
+            {!isVisionTask ? (
+              <button
+                type="button"
+                className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-700 transition hover:border-sky-300 hover:bg-sky-100"
+                onClick={() => onReuseParams(task)}
+              >
+                {t("tasks.actions.reuseParams")}
+              </button>
+            ) : null}
+            {task.status === "error" || task.status === "cancelled" ? (
+              <button type="button" className={actionButtonClass()} onClick={() => onRetry(task.id)}>
+                {t("tasks.actions.retry")}
+              </button>
+            ) : null}
             {canCancel ? (
               <button type="button" className={actionButtonClass()} onClick={() => onCancel(task.id)}>
                 {t("tasks.actions.cancel")}
               </button>
             ) : null}
-            <button type="button" className={actionButtonClass()} onClick={() => onRemove(task.id)}>
-              {t("tasks.actions.delete")}
-            </button>
+
+            <div className="relative" ref={actionsMenuRef}>
+              <button
+                type="button"
+                className={actionButtonClass()}
+                aria-label={t("tasks.actions.more")}
+                aria-expanded={actionsMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setActionsMenuOpen((open) => !open)}
+              >
+                ⋯
+              </button>
+              {actionsMenuOpen ? (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-10 mt-1 w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg"
+                >
+                  {isVisionTask ? (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuItemClass(!hasOutputText)}
+                        disabled={!hasOutputText}
+                        onClick={() => {
+                          setActionsMenuOpen(false);
+                          void handleCopyOutputText();
+                        }}
+                      >
+                        {t("tasks.actions.copyOutput")}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuItemClass(!hasOutputText)}
+                        disabled={!hasOutputText}
+                        onClick={() => {
+                          setActionsMenuOpen(false);
+                          handleDownloadOutputText();
+                        }}
+                      >
+                        {t("tasks.actions.downloadText")}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuItemClass(!hasImage)}
+                        disabled={!hasImage}
+                        onClick={() => {
+                          setActionsMenuOpen(false);
+                          void handleDownload();
+                        }}
+                      >
+                        {t("tasks.actions.download")}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={menuItemClass(!hasImage)}
+                        disabled={!hasImage}
+                        onClick={() => {
+                          setActionsMenuOpen(false);
+                          void handleCopyImage();
+                        }}
+                      >
+                        {t("tasks.actions.copyImageUrl")}
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass()}
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      void handleCopyPrompt();
+                    }}
+                  >
+                    {t("tasks.actions.copyPrompt")}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass(!hasDebug)}
+                    disabled={!hasDebug}
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      void handleCopyDebug();
+                    }}
+                  >
+                    {t("tasks.actions.copyDebug")}
+                  </button>
+                  {!isVisionTask ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className={menuItemClass(!hasStoredImage)}
+                      disabled={!hasStoredImage}
+                      onClick={() => {
+                        setActionsMenuOpen(false);
+                        handleClearImage();
+                      }}
+                    >
+                      {t("tasks.actions.deleteImageCache")}
+                    </button>
+                  ) : null}
+                  <div className="my-1 border-t border-slate-200" role="separator" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={menuItemClass(false, true)}
+                    onClick={() => {
+                      setActionsMenuOpen(false);
+                      onRemove(task.id);
+                    }}
+                  >
+                    {t("tasks.actions.delete")}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
