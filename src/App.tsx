@@ -219,6 +219,12 @@ export default function App() {
   }
 
   function handleReuseParams(payload: ReuseParamsPayload) {
+    console.log("[reuseParams] handleReuseParams", {
+      model: payload.model,
+      inputImageCount: payload.inputImages?.length ?? 0,
+      hasMask: !!payload.maskImage,
+      inputImagesLost: payload.inputImagesLost,
+    });
 
     // Update settings (model + responseFormat)
     setSettings({
@@ -259,8 +265,31 @@ export default function App() {
     const isEdit = task.mode === "edit";
     const hasInputs = isEdit && pending && pending.images.length > 0;
 
-    // If the task was an edit but inputs are gone, mark them as lost
-    const inputImagesLost = isEdit && !hasInputs;
+    // The generate form keeps inputImages/maskImage after a successful
+    // submit (so the user can tweak & re-submit). So when an edit task's
+    // in-memory File blobs have already been released (task succeeded),
+    // fall back to whatever reference images are still sitting in the form
+    // before declaring them "lost". In the common "just uploaded, just
+    // generated, now reuse" flow the images are still right there — no
+    // reason to tell the user they're gone.
+    const fallbackAvailable = isEdit && !hasInputs && form.inputImages.length > 0;
+
+    // Only truly lost when there are neither in-memory inputs nor form
+    // fallback images.
+    const inputImagesLost = isEdit && !hasInputs && !fallbackAvailable;
+
+    console.log("[reuseParams] buildReusePayloadFromTask", {
+      taskId: task.id,
+      taskMode: task.mode,
+      taskStatus: task.status,
+      hasPendingInputs: !!pending,
+      pendingImageCount: pending?.images.length ?? 0,
+      formImageCount: form.inputImages.length,
+      hasFormMask: !!form.maskImage,
+      hasInputs,
+      fallbackAvailable,
+      inputImagesLost,
+    });
 
     // Convert File blobs back to InputImageFile format for the form
     let inputImages: InputImageFile[] | undefined;
@@ -284,6 +313,12 @@ export default function App() {
             height: 0,
           }
         : null;
+    } else if (fallbackAvailable) {
+      // Reuse the form's existing InputImageFile entries as-is — their
+      // previewUrls are already valid, so no need to mint new object URLs
+      // (which would also leak the old ones).
+      inputImages = form.inputImages;
+      maskImage = form.maskImage;
     }
 
     return {
