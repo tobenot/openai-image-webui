@@ -19,7 +19,7 @@ import { parseAdvancedJson } from "./lib/parseAdvancedJson";
 import { stripGeminiSizeArtifacts } from "./lib/imageSizing";
 import { DEFAULT_BATCH_FORM, DEFAULT_FORM, DEFAULT_VISION_FORM, loadBatchPrompts, saveBatchPrompts } from "./lib/storage";
 import { createBatchId, parsePromptList } from "./lib/promptList";
-import { downloadBatchZip } from "./lib/batchExport";
+import { downloadBatchZip, getTaskBatchId } from "./lib/batchExport";
 import type { AppSettings, BatchFormState, GenerateFormState, ImageTask, InputImageFile, ReuseParamsPayload, VisionFormState } from "./types";
 
 
@@ -122,6 +122,17 @@ const MODE_ICONS: Record<WorkspaceMode, ReactNode> = {
     </svg>
   ),
 };
+
+/** Build an {@link InputImageFile} from a File with a fresh object URL. */
+function makeInputImageFile(file: File, width = 0, height = 0): InputImageFile {
+  return {
+    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    file,
+    previewUrl: URL.createObjectURL(file),
+    width,
+    height,
+  };
+}
 
 export default function App() {
   const { i18n, t } = useTranslation();
@@ -280,17 +291,21 @@ export default function App() {
     const isEdit = task.mode === "edit";
     const hasInputs = isEdit && pending && pending.images.length > 0;
 
-    // The generate form keeps inputImages/maskImage after a successful
-    // submit (so the user can tweak & re-submit). So when an edit task's
-    // in-memory File blobs have already been released (task succeeded),
-    // fall back to whatever reference images are still sitting in the form
-    // before declaring them "lost". In the common "just uploaded, just
-    // generated, now reuse" flow the images are still right there — no
-    // reason to tell the user they're gone.
-    const fallbackAvailable = isEdit && !hasInputs && form.inputImages.length > 0;
+    // The generate and batch forms both keep their inputImages after a
+    // successful submit (so the user can tweak & re-submit). The in-memory
+    // File blobs held in pendingInputs are released once the task succeeds,
+    // so when reusing an edit task whose blobs are gone, fall back to the
+    // form that originally supplied the images before declaring them "lost".
+    // Batch tasks were created from the batch form; single edits from the
+    // generate form. In the common "just uploaded, just generated, now
+    // reuse" flow the images are still right there - no reason to tell the
+    // user they're gone.
+    const isBatchTask = !!getTaskBatchId(task);
+    const fallbackSource = isBatchTask ? batchForm.inputImages : form.inputImages;
+    const fallbackAvailable = isEdit && !hasInputs && fallbackSource.length > 0;
 
-    // Only truly lost when there are neither in-memory inputs nor form
-    // fallback images.
+    // Only truly lost when there are neither in-memory inputs nor a form
+    // fallback.
     const inputImagesLost = isEdit && !hasInputs && !fallbackAvailable;
 
     console.log("[reuseParams] buildReusePayloadFromTask", {
@@ -299,7 +314,8 @@ export default function App() {
       taskStatus: task.status,
       hasPendingInputs: !!pending,
       pendingImageCount: pending?.images.length ?? 0,
-      formImageCount: form.inputImages.length,
+      isBatchTask,
+      fallbackImageCount: fallbackSource.length,
       hasFormMask: !!form.maskImage,
       hasInputs,
       fallbackAvailable,
@@ -311,29 +327,26 @@ export default function App() {
     let maskImage: InputImageFile | null | undefined;
 
     if (hasInputs && pending) {
-      inputImages = pending.images.map((file: File) => ({
-
-        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        file,
-        previewUrl: URL.createObjectURL(file),
-        width: 0,
-        height: 0,
-      }));
-      maskImage = pending.mask
-        ? {
-            id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            file: pending.mask,
-            previewUrl: URL.createObjectURL(pending.mask),
-            width: 0,
-            height: 0,
-          }
-        : null;
+      inputImages = pending.images.map((file: File) => makeInputImageFile(file));
+      maskImage = pending.mask ? makeInputImageFile(pending.mask) : null;
     } else if (fallbackAvailable) {
-      // Reuse the form's existing InputImageFile entries as-is — their
-      // previewUrls are already valid, so no need to mint new object URLs
-      // (which would also leak the old ones).
-      inputImages = form.inputImages;
-      maskImage = form.maskImage;
+      if (isBatchTask) {
+        // The batch form's images are about to move into the generate form.
+        // Clone them with fresh object URLs so they don't share previewUrl
+        // lifetime with the batch form - revoking one when removed from the
+        // generate form must not break the batch form's copy.
+        inputImages = fallbackSource.map((item) =>
+          makeInputImageFile(item.file, item.width, item.height),
+        );
+        maskImage = null; // batch tasks never carry a mask
+      } else {
+        // Reuse the generate form's existing InputImageFile entries as-is -
+        // their previewUrls are already valid, and they stay in the same
+        // form, so no need to mint new object URLs (which would also leak
+        // the old ones).
+        inputImages = form.inputImages;
+        maskImage = form.maskImage;
+      }
     }
 
     return {
