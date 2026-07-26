@@ -16,6 +16,7 @@ import { useImageTasks } from "./hooks/useImageTasks";
 import { useSettings } from "./hooks/useSettings";
 import { toFriendlyError } from "./lib/errors";
 import { parseAdvancedJson } from "./lib/parseAdvancedJson";
+import { stripGeminiSizeArtifacts } from "./lib/imageSizing";
 import { DEFAULT_BATCH_FORM, DEFAULT_FORM, DEFAULT_VISION_FORM, loadBatchPrompts, saveBatchPrompts } from "./lib/storage";
 import { createBatchId, parsePromptList } from "./lib/promptList";
 import { downloadBatchZip } from "./lib/batchExport";
@@ -219,11 +220,25 @@ export default function App() {
   }
 
   function handleReuseParams(payload: ReuseParamsPayload) {
+    // Gemini models store auto-derived aspect_ratio / image_size in
+    // extraParams and an auto-appended "--ar X:Y" in the prompt. Restoring
+    // them verbatim locks the size — subsequent form.size changes get
+    // ignored by buildCompatibleImageRequest (the "改尺寸都无效" bug). Strip
+    // them here so form.size stays the single source of truth. No-op for
+    // non-Gemini models.
+    const { prompt: cleanPrompt, extraParams: cleanExtra } = stripGeminiSizeArtifacts(
+      payload.model,
+      payload.prompt,
+      payload.size,
+      payload.extraParams,
+    );
+
     console.log("[reuseParams] handleReuseParams", {
       model: payload.model,
       inputImageCount: payload.inputImages?.length ?? 0,
       hasMask: !!payload.maskImage,
       inputImagesLost: payload.inputImagesLost,
+      strippedGeminiArtifacts: cleanPrompt !== payload.prompt || cleanExtra !== payload.extraParams,
     });
 
     // Update settings (model + responseFormat)
@@ -234,11 +249,11 @@ export default function App() {
 
     // Update form (prompt + size + advancedJson + inputImages + maskImage)
     setForm({
-      prompt: payload.prompt,
+      prompt: cleanPrompt,
       count: 1,
       size: payload.size,
-      advancedJson: payload.extraParams && Object.keys(payload.extraParams).length > 0
-        ? JSON.stringify(payload.extraParams, null, 2)
+      advancedJson: cleanExtra && Object.keys(cleanExtra).length > 0
+        ? JSON.stringify(cleanExtra, null, 2)
         : "",
       inputImages: payload.inputImages ?? [],
       maskImage: payload.maskImage ?? null,

@@ -419,3 +419,72 @@ export function buildCompatibleImageRequest({
     extraParams: nextExtraParams,
   };
 }
+
+/**
+ * Match a trailing `--ar <w>:<h>` (or `--aspect-ratio`, with `/` or spaced
+ * separators) appended to a prompt. Only used to strip the suffix that
+ * {@link buildCompatibleImageRequest} auto-appends for Gemini models.
+ */
+function buildTrailingAspectRatioRegExp(w: number, h: number) {
+  return new RegExp(
+    `\\s+--(?:ar|aspect(?:-ratio)?)\\s+${w}\\s*[:/]\\s*${h}\\b\\s*$`,
+    "i",
+  );
+}
+
+/**
+ * When reusing a Gemini task's parameters, the stored `extraParams` carry
+ * auto-derived `aspect_ratio` / `image_size` and the stored `prompt` carries
+ * an auto-appended `--ar X:Y` suffix. Restoring them verbatim "locks" the
+ * size: {@link buildCompatibleImageRequest} prefers `extraParams.aspect_ratio`
+ * over the parsed `form.size`, so every subsequent size change is silently
+ * ignored — the "使用此参数 → 改尺寸都无效" bug.
+ *
+ * Stripping these artifacts turns `form.size` back into the single source of
+ * truth: `aspect_ratio` / `image_size` / `--ar` are re-derived from
+ * `form.size` on the next generate, so size changes take effect again.
+ *
+ * Only the `--ar` suffix whose ratio matches the ratio derived from `size`
+ * (i.e. the one auto-appended at generate time) is removed — a user-authored
+ * `--ar` with a different ratio is preserved.
+ *
+ * For non-Gemini models this is a no-op.
+ */
+export function stripGeminiSizeArtifacts(
+  model: string,
+  prompt: string,
+  size: string,
+  extraParams?: Record<string, unknown>,
+): { prompt: string; extraParams: Record<string, unknown> | undefined } {
+  if (getModelSizingProfile(model).mode !== "geminiAspect") {
+    return { prompt, extraParams };
+  }
+
+  // 1. Drop the auto-derived size params so form.size drives the derive.
+  const cleaned: Record<string, unknown> = { ...(extraParams ?? {}) };
+  let touched = false;
+  for (const key of ["aspect_ratio", "aspectRatio", "image_size", "imageSize"]) {
+    if (Object.prototype.hasOwnProperty.call(cleaned, key)) {
+      delete cleaned[key];
+      touched = true;
+    }
+  }
+
+  // 2. Strip the auto-appended "--ar <ratio>" suffix matching the stored
+  //    size's derived ratio (the one buildCompatibleImageRequest appended).
+  let cleanedPrompt = prompt;
+  const derivedRatio = closestAspectRatio(parseSize(size), geminiAspectRatios(model));
+  const parts = derivedRatio.split(":").map(Number);
+  if (Number.isFinite(parts[0]) && Number.isFinite(parts[1]) && parts[0] > 0 && parts[1] > 0) {
+    const next = prompt.replace(buildTrailingAspectRatioRegExp(parts[0], parts[1]), "");
+    if (next !== prompt) {
+      cleanedPrompt = next;
+      touched = true;
+    }
+  }
+
+  if (!touched) {
+    return { prompt, extraParams };
+  }
+  return { prompt: cleanedPrompt, extraParams: touched ? cleaned : extraParams };
+}
