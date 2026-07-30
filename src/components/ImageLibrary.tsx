@@ -63,7 +63,7 @@ function getColumnCount(width: number) {
   return Math.max(1, Math.floor((width + GRID_GAP) / (CARD_MIN_WIDTH + GRID_GAP)));
 }
 
-export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCache, onReuseParams }: ImageLibraryProps) {
+export const ImageLibrary = memo(function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCache, onReuseParams }: ImageLibraryProps) {
   const { t } = useTranslation();
   const [items, setItems] = useState<LibraryImage[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -151,17 +151,42 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
       clearObjectUrls();
       setItems(page.images.map(toLibraryImage));
       setHasMore(page.hasMore);
+      return true;
     } catch (error) {
       console.warn("[openai-image-webui] Failed to load image library", error);
       setMessageKey("library.messages.loadFailed");
+      return false;
     } finally {
       setIsLoading(false);
     }
   }, [clearObjectUrls, toLibraryImage]);
 
+  // Snapshot of the cache size at the time of the last load, so we can tell
+  // the user how many images arrived since then.
+  const [loadedCount, setLoadedCount] = useState<number | null>(null);
+  const pendingNewCount = loadedCount === null ? 0 : Math.max(0, stats.count - loadedCount);
+
+  const refreshLibrary = useCallback(async () => {
+    if (await loadFirstPage()) {
+      setLoadedCount(stats.count);
+    }
+  }, [loadFirstPage, stats.count]);
+
+  const statsCountRef = useRef(stats.count);
+  statsCountRef.current = stats.count;
+
   useEffect(() => {
-    void loadFirstPage();
-  }, [loadFirstPage, stats.count, stats.size]);
+    void loadFirstPage().then((ok) => {
+      if (ok) {
+        setLoadedCount(statsCountRef.current);
+      }
+    });
+    // Deliberately runs once on mount. Reloading whenever `stats` changes would
+    // yank the user back to page 1 every time a background generation finishes,
+    // which makes the library unusable during batch runs. New images are
+    // surfaced through the refresh hint instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     return () => clearObjectUrls();
@@ -534,6 +559,9 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
     onDeleteImage(item.id);
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
     setMessageKey("library.messages.imageDeleted");
+    // Keep the "new images" counter aligned with what we actually show, so a
+    // deletion does not look like an incoming image.
+    setLoadedCount((current) => (current === null ? current : Math.max(0, current - 1)));
   }
 
   function handleClearAll() {
@@ -542,6 +570,7 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
     setHasMore(false);
     onClearImageCache();
     setMessageKey("library.messages.cacheCleared");
+    setLoadedCount(0);
   }
 
   function handleReuseFromLibrary(item: LibraryImage) {
@@ -571,6 +600,17 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
       <div className="mb-5">
         <ImageCacheSummary stats={stats} onClear={handleClearAll} />
       </div>
+
+      {pendingNewCount > 0 ? (
+        <button
+          type="button"
+          className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-medium text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isLoading}
+          onClick={() => void refreshLibrary()}
+        >
+          {t("library.newImages", { count: pendingNewCount })}
+        </button>
+      ) : null}
 
       {messageKey ? <div className="mb-4 text-xs text-emerald-600">{t(messageKey)}</div> : null}
 
@@ -699,7 +739,7 @@ export function ImageLibrary({ stats, onPreview, onDeleteImage, onClearImageCach
       )}
     </section>
   );
-}
+});
 
 interface ImageCardProps {
   item: LibraryImage;

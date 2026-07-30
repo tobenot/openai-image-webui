@@ -1,10 +1,18 @@
 import type { ImageCacheStats, ImageResponseFormat } from "../types";
+import { reportStorageIssue } from "./storageHealth";
 
 const DB_NAME = "openai-image-webui-cache";
 const DB_VERSION = 2;
 const STORE_NAME = "images";
 
 export const IMAGE_CACHE_WARNING_BYTES = 200 * 1024 * 1024;
+
+/**
+ * Hard ceiling for the image cache. Beyond this we evict oldest-first instead
+ * of waiting for the browser to reject writes — a rejected write means the
+ * generated image is gone for good, which is far worse than dropping an old one.
+ */
+export const IMAGE_CACHE_LIMIT_BYTES = 400 * 1024 * 1024;
 
 export interface CachedImageMetadata {
   prompt?: string;
@@ -180,12 +188,102 @@ export async function cacheImageFromUrl(
   return record;
 }
 
-export function saveCachedImage(record: CachedImageRecord) {
+function putRecord(record: CachedImageRecord) {
   return runTransaction<void>("readwrite", (store, resolve, reject) => {
     const request = store.put(record);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
+}
+
+/**
+ * Deletes oldest-first until at least `bytesNeeded` has been freed.
+ * `protectedId` is never evicted — it is the record we are trying to store.
+ */
+function evictOldest(bytesNeeded: number, protectedId?: string): Promise<number> {
+  return runTransaction<number>("readwrite", (store, resolve, reject) => {
+    const request = store.index("cachedAt").openCursor(null, "next");
+    let freed = 0;
+
+    request.onsuccess = () => {
+      const cursor = request.result;
+
+      if (!cursor || freed >= bytesNeeded) {
+        resolve(freed);
+        return;
+      }
+
+      const record = cursor.value as CachedImageRecord;
+
+      if (record.id === protectedId) {
+        cursor.continue();
+        return;
+      }
+
+      freed += typeof record.size === "number" ? record.size : record.blob?.size ?? 0;
+      cursor.delete();
+      cursor.continue();
+    };
+
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Cached total byte size, so the common write path does not have to scan the
+ * whole store. `null` means "unknown, needs a full measure" — which is also
+ * what every mutation outside this module resets it to.
+ */
+let cachedTotalBytes: number | null = null;
+
+function invalidateSizeCache() {
+  cachedTotalBytes = null;
+}
+
+async function getTotalBytes(): Promise<number> {
+  if (cachedTotalBytes !== null) {
+    return cachedTotalBytes;
+  }
+
+  const stats = await getImageCacheStats();
+  cachedTotalBytes = stats.size;
+  return cachedTotalBytes;
+}
+
+export async function saveCachedImage(record: CachedImageRecord) {
+  // Proactively make room so we stay under the ceiling, rather than waiting for
+  // the browser to reject the write (by which point the image is already lost).
+  try {
+    const total = await getTotalBytes();
+
+    if (total + record.size > IMAGE_CACHE_LIMIT_BYTES) {
+      const freed = await evictOldest(total + record.size - IMAGE_CACHE_LIMIT_BYTES, record.id);
+      cachedTotalBytes = Math.max(0, total - freed);
+    }
+  } catch (error) {
+    invalidateSizeCache();
+    reportStorageIssue("imageCacheEvictionFailed", error);
+  }
+
+  try {
+    await putRecord(record);
+    cachedTotalBytes = cachedTotalBytes === null ? null : cachedTotalBytes + record.size;
+    return;
+  } catch (error) {
+    // Quota rejection despite our own accounting (other origins consuming the
+    // shared budget, or a much smaller browser-imposed quota than we assumed).
+    // Free several times the record size and retry once.
+    invalidateSizeCache();
+
+    try {
+      await evictOldest(Math.max(record.size * 4, 32 * 1024 * 1024), record.id);
+      await putRecord(record);
+      return;
+    } catch (retryError) {
+      reportStorageIssue("imageCacheWriteFailed", retryError ?? error);
+      throw retryError ?? error;
+    }
+  }
 }
 
 export function getCachedImage(id: string) {
@@ -230,7 +328,10 @@ export function listCachedImages(offset = 0, limit = 50): Promise<CachedImagePag
   });
 }
 
-export function deleteCachedImage(id: string) {
+export async function deleteCachedImage(id: string) {
+  // Any external mutation makes the running byte total unreliable.
+  invalidateSizeCache();
+
   return runTransaction<void>("readwrite", (store, resolve, reject) => {
     const request = store.delete(id);
     request.onsuccess = () => resolve();
@@ -238,12 +339,16 @@ export function deleteCachedImage(id: string) {
   });
 }
 
-export function clearImageCache() {
-  return runTransaction<void>("readwrite", (store, resolve, reject) => {
+export async function clearImageCache() {
+  invalidateSizeCache();
+
+  await runTransaction<void>("readwrite", (store, resolve, reject) => {
     const request = store.clear();
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
+
+  cachedTotalBytes = 0;
 }
 
 export function getImageCacheStats(): Promise<ImageCacheStats> {

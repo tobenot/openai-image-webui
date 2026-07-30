@@ -204,38 +204,113 @@ function sanitizeAIName(raw: string, mode: NamingMode = "compact"): string {
   return name;
 }
 
-export function buildFinalName(aiName: string, originalName: string): string {
+/**
+ * `sequence` is a 1-based counter within the current batch. It replaces the
+ * random hash this used to use: 4 hex chars collide roughly 7% of the time at
+ * 100 files, and the generated .bat had no way to notice the collision.
+ */
+export function buildFinalName(aiName: string, originalName: string, sequence = 1): string {
   const now = new Date();
   const yy = String(now.getFullYear()).slice(2);
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const dd = String(now.getDate()).padStart(2, "0");
   const dateStr = `${yy}${mm}${dd}`;
-  const hash = Math.random().toString(16).slice(2, 6);
+  const seq = String(Math.max(1, Math.floor(sequence))).padStart(3, "0");
   const ext = originalName.includes(".") ? originalName.slice(originalName.lastIndexOf(".")) : ".png";
-  return `${aiName}_${dateStr}_${hash}${ext}`;
+  return `${aiName}_${dateStr}_${seq}${ext}`;
+}
+
+/**
+ * Makes sure a filename is safe to embed in a double-quoted batch-file
+ * argument. `%` and `!` trigger variable expansion; `"` terminates the
+ * argument. These are rare but do occur in artist-supplied filenames, and a
+ * broken .bat is much worse than one skipped file.
+ */
+function isBatSafe(name: string): boolean {
+  return !/["%!^&<>|\r\n]/.test(name);
+}
+
+/**
+ * Resolves duplicate target names by appending `_2`, `_3`, ... so no rename
+ * silently overwrites another file.
+ */
+function dedupeTargetNames(items: RenameItem[]): { item: RenameItem; target: string }[] {
+  const used = new Set<string>();
+
+  return items.map((item) => {
+    const dotIndex = item.newName.lastIndexOf(".");
+    const stem = dotIndex > 0 ? item.newName.slice(0, dotIndex) : item.newName;
+    const ext = dotIndex > 0 ? item.newName.slice(dotIndex) : "";
+
+    let target = item.newName;
+    let suffix = 2;
+
+    while (used.has(target.toLowerCase())) {
+      target = `${stem}_${suffix}${ext}`;
+      suffix += 1;
+    }
+
+    used.add(target.toLowerCase());
+    return { item, target };
+  });
 }
 
 export function generateRenameScript(items: RenameItem[]): string {
   const doneItems = items.filter((i) => i.status === "done" && i.newName);
   if (doneItems.length === 0) return "";
 
-  const backupLines = doneItems.map((i) => `echo ${i.newName}=${i.originalName}`).join("\n");
-  const renameLines = doneItems.map((i) => `ren "${i.originalName}" "${i.newName}"`).join("\n");
+  const pairs = dedupeTargetNames(doneItems);
+  const safePairs = pairs.filter(({ item, target }) => isBatSafe(item.originalName) && isBatSafe(target));
+  const unsafeCount = pairs.length - safePairs.length;
+
+  // Tab-separated instead of "=": filenames may legitimately contain "=",
+  // which would make the restore script split at the wrong place.
+  const backupLines = safePairs
+    .map(({ item, target }) => `echo ${target}\t${item.originalName}`)
+    .join("\n");
+
+  // Every rename is guarded: skip when the target exists, and report failures
+  // instead of silently moving on.
+  const renameLines = safePairs
+    .map(
+      ({ item, target }) => `if exist "${target}" (
+    echo [SKIP] "${target}" already exists, leaving "${item.originalName}" alone.
+    set /a SKIPPED+=1
+) else (
+    ren "${item.originalName}" "${target}"
+    if errorlevel 1 (
+        echo [FAIL] Could not rename "${item.originalName}".
+        set /a FAILED+=1
+    ) else (
+        set /a RENAMED+=1
+    )
+)`,
+    )
+    .join("\n");
+
+  const unsafeNotice = unsafeCount
+    ? `echo [WARN] ${unsafeCount} file(s) excluded - their names contain characters unsafe for batch scripts. Rename those manually.\n`
+    : "";
 
   return `@echo off
+setlocal enabledelayedexpansion
+set RENAMED=0
+set SKIPPED=0
+set FAILED=0
 echo Preparing to rename assets...
 
-:: 1. Write backup log (for restore)
+rem 1. Write backup log (for restore)
 (
 ${backupLines}
 ) > _rename_backup.log
 
-:: 2. Execute rename
+rem 2. Execute rename
 ${renameLines}
 
-echo.
+${unsafeNotice}echo.
 echo ==========================================
-echo  Rename complete!
+echo  Renamed: !RENAMED!  Skipped: !SKIPPED!  Failed: !FAILED!
+if not "!FAILED!"=="0" echo  Some files failed - see messages above.
 echo  To undo, run [restore_names.bat]
 echo ==========================================
 pause
@@ -244,6 +319,9 @@ pause
 
 export function generateRestoreScript(): string {
   return `@echo off
+setlocal enabledelayedexpansion
+set RESTORED=0
+set FAILED=0
 echo Reading backup, preparing to restore original names...
 
 if not exist _rename_backup.log (
@@ -252,14 +330,29 @@ if not exist _rename_backup.log (
     exit /b
 )
 
-for /f "usebackq tokens=1,2 delims==" %%A in ("_rename_backup.log") do (
-    ren "%%A" "%%B"
+for /f "usebackq tokens=1,2 delims=	" %%A in ("_rename_backup.log") do (
+    if exist "%%A" (
+        ren "%%A" "%%B"
+        if errorlevel 1 (
+            echo [FAIL] Could not restore "%%A".
+            set /a FAILED+=1
+        ) else (
+            set /a RESTORED+=1
+        )
+    ) else (
+        echo [SKIP] "%%A" not found, maybe already restored.
+    )
 )
 
-del _rename_backup.log
 echo.
 echo ==========================================
-echo  Original filenames restored!
+echo  Restored: !RESTORED!  Failed: !FAILED!
+if "!FAILED!"=="0" (
+    del _rename_backup.log
+    echo  Original filenames restored!
+) else (
+    echo  Backup log kept so you can retry.
+)
 echo ==========================================
 pause
 `;
@@ -277,9 +370,9 @@ export async function downloadRenamedZip(items: RenameItem[]): Promise<void> {
   const zip = new JSZip();
   const doneItems = items.filter((i) => i.status === "done" && i.newName);
 
-  for (const item of doneItems) {
+  for (const { item, target } of dedupeTargetNames(doneItems)) {
     const arrayBuffer = await item.file.arrayBuffer();
-    zip.file(item.newName, arrayBuffer);
+    zip.file(target, arrayBuffer);
   }
 
   const blob = await zip.generateAsync({ type: "blob" });

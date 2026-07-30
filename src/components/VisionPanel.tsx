@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { memo, useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { InputImageError, prepareInputImage } from "../lib/imageInput";
 import type { InputImageFile, VisionDetail, VisionFormState } from "../types";
@@ -12,10 +12,28 @@ interface VisionPanelProps {
   onSubmit: () => void;
 }
 
-export function VisionPanel({ form, error, visionModel, onChange, onSubmit }: VisionPanelProps) {
-  const { t } = useTranslation();
+export const VisionPanel = memo(function VisionPanel({ form, error, visionModel, onChange, onSubmit }: VisionPanelProps) {
+  const { t, i18n } = useTranslation();
   const [inputImageError, setInputImageError] = useState("");
   const imageFileInputRef = useRef<HTMLInputElement>(null);
+  // Remembers the default we injected so that switching UI language also
+  // switches the prompt — but only while the user has not written their own.
+  // Note: the panel unmounts when another workspace is active, so a language
+  // switch while away re-localizes on the next visit rather than immediately.
+  const injectedDefaultRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const localizedDefault = t("vision.defaultPrompt");
+    const isUntouched = form.prompt === "" || form.prompt === injectedDefaultRef.current;
+
+    if (isUntouched && form.prompt !== localizedDefault) {
+      injectedDefaultRef.current = localizedDefault;
+      onChange({ prompt: localizedDefault });
+    }
+    // Reacts to language only. `form.prompt` is read but deliberately excluded:
+    // including it would re-run this on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i18n.resolvedLanguage, t]);
 
   async function handleAddInputImages(files: FileList | File[]) {
     setInputImageError("");
@@ -191,4 +209,4 @@ export function VisionPanel({ form, error, visionModel, onChange, onSubmit }: Vi
       </form>
     </section>
   );
-}
+});

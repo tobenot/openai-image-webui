@@ -133,6 +133,25 @@ async function readImageDimensions(
 }
 
 /**
+ * Wraps an already-validated File (e.g. one recovered from an in-flight task)
+ * into an InputImageFile with real dimensions. Skips the size/mime checks
+ * because the file already passed them on its way in.
+ *
+ * Caller owns the previewUrl lifecycle.
+ */
+export async function toInputImageFile(file: File): Promise<InputImageFile> {
+  const dims = await readImageDimensions(file).catch(() => ({ width: 0, height: 0 }));
+
+  return {
+    id: createInputImageId(),
+    file,
+    previewUrl: URL.createObjectURL(file),
+    width: dims.width,
+    height: dims.height,
+  };
+}
+
+/**
  * Validate + (optionally) downscale a user-picked file, then wrap it into an
  * InputImageFile ready to be rendered in the UI.
  *

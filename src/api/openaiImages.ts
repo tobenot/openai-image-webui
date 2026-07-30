@@ -4,6 +4,7 @@ import type {
   GenerateImageResult,
   ImageTaskDebug,
 } from "../types";
+import { stripInternalParams } from "./requestShaping";
 
 const DEBUG_LOG_PREFIX_GENERATE = "[openai-image-webui] images/generations";
 const DEBUG_LOG_PREFIX_EDIT = "[openai-image-webui] images/edits";
@@ -160,21 +161,6 @@ function assertBasicParams(params: GenerateImageParams) {
 
 function joinBaseUrl(baseUrl: string, path: string) {
   return `${baseUrl.trim().replace(/\/$/, "")}${path}`;
-}
-
-/**
- * Drop keys starting with `_` from an extraParams object before sending to
- * the API. Such keys are reserved for internal metadata (e.g. `_batchId`,
- * `_batchIndex`) and must not leak into the request body.
- */
-function stripInternalParams(params: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(params)) {
-    if (!key.startsWith("_")) {
-      out[key] = value;
-    }
-  }
-  return out;
 }
 
 export async function generateImage(

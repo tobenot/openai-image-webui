@@ -6,24 +6,35 @@ Bring your own API key and endpoint.
 
 ## Features
 
-- Pure frontend, no backend required
-- Deployable on GitHub Pages
-- Bring your own API key
-- Bring your own API endpoint
-- Compatible with OpenAI Images API
-- Supports vision image understanding (with optional text extraction) through OpenAI-compatible vision endpoints
+**Core**
+
+- Pure frontend, no backend required — deployable on GitHub Pages
+- Bring your own API key and API endpoint (any OpenAI-compatible relay works)
 - Supports custom model names, with on-demand model list fetching and type filtering from `GET /v1/models`
 - Image model suggestions can be filtered by type, while Vision model suggestions remain unfiltered for multimodal models
-- Supports parallel image generation and vision analysis tasks
-
 - Supports URL and base64 image responses
-- Supports image preview, download, and copy
 - Stores settings locally in your browser
+
+**Four workspaces**
+
+- **Generate** — text-to-image and image-to-image (edits) with optional inpainting mask, reference images, and an Advanced JSON escape hatch for parameters not exposed in the UI
+- **Vision** — upload images and have a vision model describe them or extract text
+- **Batch** — run a list of prompts (one per line, or pasted CSV) against shared reference images and settings, then export the whole batch as a ZIP
+- **Batch Rename** — let a vision model name game-art assets from their content, then download a Windows `.bat` pair to apply or undo the renames locally
+
+**Output and history**
+
+- Parallel task execution with a configurable concurrency limit
+- Image library backed by IndexedDB, with virtualized grid, marquee selection, and ZIP export
+- Per-task cost estimation based on OpenAI list pricing (rough reference only — relays will differ)
+- Per-task debug view with the full request/response, copyable as JSON
+- Automatic oldest-first cache eviction, and visible warnings when browser storage runs out
+- English / Simplified Chinese UI
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/yourname/openai-image-webui.git
+git clone https://github.com/tobenot/openai-image-webui.git
 cd openai-image-webui
 npm install
 npm run dev

@@ -10,6 +10,7 @@ import { TaskQueue } from "./components/TaskQueue";
 import { VisionPanel } from "./components/VisionPanel";
 import { BatchRenamePanel } from "./components/BatchRenamePanel";
 import { BatchGenerationPanel } from "./components/BatchGenerationPanel";
+import { StorageHealthBanner } from "./components/StorageHealthBanner";
 
 
 import { useImageTasks } from "./hooks/useImageTasks";
@@ -17,6 +18,7 @@ import { useSettings } from "./hooks/useSettings";
 import { toFriendlyError } from "./lib/errors";
 import { parseAdvancedJson } from "./lib/parseAdvancedJson";
 import { DEFAULT_BATCH_FORM, DEFAULT_FORM, DEFAULT_VISION_FORM, loadBatchPrompts, saveBatchPrompts } from "./lib/storage";
+import { toInputImageFile } from "./lib/imageInput";
 import { createBatchId, parsePromptList } from "./lib/promptList";
 import { downloadBatchZip } from "./lib/batchExport";
 import type { AppSettings, BatchFormState, GenerateFormState, ImageTask, InputImageFile, ReuseParamsPayload, VisionFormState } from "./types";
@@ -167,15 +169,17 @@ export default function App() {
       ?.setAttribute("content", t("meta.description"));
   }, [i18n.resolvedLanguage, t]);
 
-  function updateForm(next: Partial<GenerateFormState>) {
+  // These are passed to memo()-wrapped panels, so they must be stable —
+  // otherwise every App render defeats the memoization entirely.
+  const updateForm = useCallback((next: Partial<GenerateFormState>) => {
     setForm((current) => ({ ...current, ...next }));
-  }
+  }, []);
 
-  function updateVisionForm(next: Partial<VisionFormState>) {
+  const updateVisionForm = useCallback((next: Partial<VisionFormState>) => {
     setVisionForm((current) => ({ ...current, ...next }));
-  }
+  }, []);
 
-  function updateBatchForm(next: Partial<BatchFormState>) {
+  const updateBatchForm = useCallback((next: Partial<BatchFormState>) => {
     setBatchForm((current) => {
       const merged = { ...current, ...next };
       if (typeof next.promptsText === "string") {
@@ -183,9 +187,9 @@ export default function App() {
       }
       return merged;
     });
-  }
+  }, []);
 
-  function handleReuseParams(payload: ReuseParamsPayload) {
+  const handleReuseParams = useCallback((payload: ReuseParamsPayload) => {
 
     // Update settings (model + responseFormat)
     setSettings({
@@ -193,16 +197,38 @@ export default function App() {
       responseFormat: payload.responseFormat,
     });
 
-    // Update form (prompt + size + advancedJson + inputImages + maskImage)
-    setForm({
-      prompt: payload.prompt,
-      count: 1,
-      size: payload.size,
-      advancedJson: payload.extraParams && Object.keys(payload.extraParams).length > 0
-        ? JSON.stringify(payload.extraParams, null, 2)
-        : "",
-      inputImages: payload.inputImages ?? [],
-      maskImage: payload.maskImage ?? null,
+    // Update form (prompt + size + advancedJson + inputImages + maskImage).
+    // The functional form lets us revoke the object URLs of the images we are
+    // replacing — otherwise repeated "reuse params" leaks a blob every time.
+    setForm((current) => {
+      const nextImages = payload.inputImages ?? [];
+      const nextMask = payload.maskImage ?? null;
+      const keptUrls = new Set(nextImages.map((image) => image.previewUrl));
+
+      if (nextMask) {
+        keptUrls.add(nextMask.previewUrl);
+      }
+
+      for (const image of current.inputImages) {
+        if (!keptUrls.has(image.previewUrl)) {
+          URL.revokeObjectURL(image.previewUrl);
+        }
+      }
+
+      if (current.maskImage && !keptUrls.has(current.maskImage.previewUrl)) {
+        URL.revokeObjectURL(current.maskImage.previewUrl);
+      }
+
+      return {
+        prompt: payload.prompt,
+        count: 1,
+        size: payload.size,
+        advancedJson: payload.extraParams && Object.keys(payload.extraParams).length > 0
+          ? JSON.stringify(payload.extraParams, null, 2)
+          : "",
+        inputImages: nextImages,
+        maskImage: nextMask,
+      };
     });
 
     // Switch to tasks panel so the user can see the form
@@ -215,10 +241,15 @@ export default function App() {
     } else {
       setToast(t("tasks.messages.paramsApplied"));
     }
-  }
+  }, [setSettings, t]);
 
-  /** Build a ReuseParamsPayload from an ImageTask, checking in-memory inputs. */
-  function buildReusePayloadFromTask(task: ImageTask): ReuseParamsPayload {
+  /**
+   * Build a ReuseParamsPayload from an ImageTask, checking in-memory inputs.
+   * Async because recovered File blobs need decoding to recover their real
+   * dimensions — GenerationPanel uses those for the native-resolution button
+   * and for mask size validation.
+   */
+  const buildReusePayloadFromTask = useCallback(async (task: ImageTask): Promise<ReuseParamsPayload> => {
     const pending = getPendingInputs(task.id);
     const isEdit = task.mode === "edit";
     const hasInputs = isEdit && pending && pending.images.length > 0;
@@ -226,28 +257,12 @@ export default function App() {
     // If the task was an edit but inputs are gone, mark them as lost
     const inputImagesLost = isEdit && !hasInputs;
 
-    // Convert File blobs back to InputImageFile format for the form
     let inputImages: InputImageFile[] | undefined;
     let maskImage: InputImageFile | null | undefined;
 
     if (hasInputs && pending) {
-      inputImages = pending.images.map((file: File) => ({
-
-        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        file,
-        previewUrl: URL.createObjectURL(file),
-        width: 0,
-        height: 0,
-      }));
-      maskImage = pending.mask
-        ? {
-            id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            file: pending.mask,
-            previewUrl: URL.createObjectURL(pending.mask),
-            width: 0,
-            height: 0,
-          }
-        : null;
+      inputImages = await Promise.all(pending.images.map((file: File) => toInputImageFile(file)));
+      maskImage = pending.mask ? await toInputImageFile(pending.mask) : null;
     }
 
     return {
@@ -260,9 +275,16 @@ export default function App() {
       maskImage,
       inputImagesLost,
     };
-  }
+  }, [getPendingInputs]);
 
-  function handleGenerate() {
+  const handleReuseTask = useCallback(
+    (task: ImageTask) => {
+      void buildReusePayloadFromTask(task).then(handleReuseParams);
+    },
+    [buildReusePayloadFromTask, handleReuseParams],
+  );
+
+  const handleGenerate = useCallback(() => {
     setFormError("");
 
     try {
@@ -293,9 +315,9 @@ export default function App() {
         }),
       );
     }
-  }
+  }, [addTasks, form, settings, t]);
 
-  function handleAnalyzeImages() {
+  const handleAnalyzeImages = useCallback(() => {
     setVisionError("");
 
     try {
@@ -325,9 +347,9 @@ export default function App() {
         }),
       );
     }
-  }
+  }, [addVisionTask, settings, t, visionForm]);
 
-  function handleBatchGenerate() {
+  const handleBatchGenerate = useCallback(() => {
     setBatchError("");
 
     try {
@@ -364,15 +386,15 @@ export default function App() {
         }),
       );
     }
-  }
+  }, [addBatchTasks, batchForm, settings, t]);
 
-  function handleRetryBatchErrors() {
+  const handleRetryBatchErrors = useCallback(() => {
     if (!currentBatchId) return;
     const restoreFiles = batchForm.inputImages.map((item) => item.file);
     retryBatchErrors(currentBatchId, restoreFiles.length > 0 ? restoreFiles : undefined);
-  }
+  }, [batchForm.inputImages, currentBatchId, retryBatchErrors]);
 
-  async function handleExportBatch() {
+  const handleExportBatch = useCallback(async () => {
     if (!currentBatchId) return;
     setIsExportingBatch(true);
     try {
@@ -388,13 +410,19 @@ export default function App() {
     } finally {
       setIsExportingBatch(false);
     }
-  }
+  }, [currentBatchId, t, tasks]);
+
+  const handleExportBatchClick = useCallback(() => {
+    void handleExportBatch();
+  }, [handleExportBatch]);
 
   return (
 
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#e0f2fe,_transparent_34rem),linear-gradient(135deg,_#f8fafc,_#eef2ff)] px-4 py-6 text-slate-900 md:px-8">
       <div className="mx-auto max-w-7xl">
         <Header taskCount={tasks.length} onClearTasks={clearTasks} />
+
+        <StorageHealthBanner />
 
         <main className="grid gap-6 grid-cols-1 lg:grid-cols-[380px_1fr] items-start">
           {/* LEFT COLUMN: SUPER CONTROL CENTER (STICKY ON DESKTOP) */}
@@ -437,7 +465,7 @@ export default function App() {
                 onChange={updateBatchForm}
                 onSubmit={handleBatchGenerate}
                 onRetryBatchErrors={handleRetryBatchErrors}
-                onExportBatch={() => void handleExportBatch()}
+                onExportBatch={handleExportBatchClick}
               />
             ) : (
               <BatchRenamePanel settings={settings} />
@@ -477,15 +505,15 @@ export default function App() {
                 onCancel={cancelTask}
                 onRemove={removeTask}
                 onClearTaskImage={clearTaskImage}
-                onReuseParams={(task) => handleReuseParams(buildReusePayloadFromTask(task))}
+                onReuseParams={handleReuseTask}
               />
             ) : (
               <ImageLibrary
                 stats={cacheStats}
                 onPreview={setPreviewUrl}
                 onDeleteImage={clearTaskImage}
+                onReuseParams={handleReuseParams}
                 onClearImageCache={clearCachedImages}
-                onReuseParams={(payload) => handleReuseParams(payload)}
               />
             )}
           </div>

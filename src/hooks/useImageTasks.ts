@@ -15,6 +15,7 @@ import { toFriendlyError } from "../lib/errors";
 import { buildCompatibleImageRequest } from "../lib/imageSizing";
 import { estimateImageCost, estimateTokenCost, extractUsageFromRaw } from "../lib/pricing";
 import { loadTasks, saveTasks } from "../lib/storage";
+import { reportStorageIssue } from "../lib/storageHealth";
 import { generateThumbnail } from "../lib/thumbnail";
 import type { AppSettings, GenerateFormState, ImageCacheStats, ImageTask, InputImageFile, VisionFormState } from "../types";
 
@@ -251,6 +252,9 @@ export function useImageTasks(settings: AppSettings) {
       }
 
       console.warn("[openai-image-webui] Failed to cache generated image (all attempts)", lastError);
+      // The image survives in this session but will vanish on reload — the user
+      // needs to know, otherwise it just silently disappears later.
+      reportStorageIssue("imageCacheWriteFailed", lastError);
       return {
         imageUrl,
         imageCached: false,

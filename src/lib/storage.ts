@@ -1,4 +1,5 @@
 import type { AppSettings, BatchFormState, GenerateFormState, ImageTask, ImageTaskStatus, VisionFormState } from "../types";
+import { reportStorageIssue } from "./storageHealth";
 
 
 export const STORAGE_KEYS = {
@@ -9,8 +10,24 @@ export const STORAGE_KEYS = {
 
 const PERSISTED_TASKS_LIMIT = 500;
 
-export const DEFAULT_VISION_PROMPT =
-  "请用中文详细描述这张图片的内容：画面中有什么、表达了什么意思、关键信息是什么。如果图中有文字，也一并提取出来。";
+/**
+ * Upper bound on concurrent requests. The settings input has `max={10}`, but
+ * HTML number inputs do not actually reject out-of-range values, and nothing
+ * stops a hand-edited localStorage entry. Clamping here keeps the app from
+ * firing hundreds of parallel requests and exhausting the connection pool.
+ */
+export const MAX_CONCURRENCY = 10;
+
+/**
+ * Total budget for base64 image payloads kept in localStorage as a recovery
+ * fallback. A single 1024x1024 PNG is ~1.5-2 MB as base64, and the whole
+ * localStorage origin quota is typically only ~5 MB — a handful of uncached
+ * images would otherwise wipe out the entire task history.
+ */
+const B64_FALLBACK_BUDGET_BYTES = 1_500_000;
+
+/** Vision prompt i18n key — resolved by the caller so it follows the UI language. */
+export const DEFAULT_VISION_PROMPT_KEY = "vision.defaultPrompt";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   apiKey: "",
@@ -31,7 +48,9 @@ export const DEFAULT_FORM: GenerateFormState = {
 };
 
 export const DEFAULT_VISION_FORM: VisionFormState = {
-  prompt: DEFAULT_VISION_PROMPT,
+  // Left empty on purpose: the real default is localized and injected by
+  // VisionPanel, so switching UI language switches the placeholder prompt too.
+  prompt: "",
   advancedJson: "",
   inputImages: [],
   detail: "high",
@@ -63,11 +82,13 @@ export function readJson<T>(key: string): T | null {
   }
 }
 
-export function writeJson<T>(key: string, value: T) {
+export function writeJson<T>(key: string, value: T): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
-    // Ignore localStorage quota or privacy-mode failures.
+    // Caller decides whether this is worth surfacing to the user.
+    return false;
   }
 }
 
@@ -84,7 +105,7 @@ export function sanitizeSettings(value: Partial<AppSettings> | null): AppSetting
         : DEFAULT_SETTINGS.responseFormat,
     concurrency:
       typeof value?.concurrency === "number" && Number.isFinite(value.concurrency)
-        ? Math.max(1, Math.floor(value.concurrency))
+        ? Math.min(MAX_CONCURRENCY, Math.max(1, Math.floor(value.concurrency)))
         : DEFAULT_SETTINGS.concurrency,
   };
 }
@@ -94,7 +115,9 @@ export function loadSettings(): AppSettings {
 }
 
 export function saveSettings(settings: AppSettings) {
-  writeJson(STORAGE_KEYS.settings, sanitizeSettings(settings));
+  if (!writeJson(STORAGE_KEYS.settings, sanitizeSettings(settings))) {
+    reportStorageIssue("settingsWriteFailed");
+  }
 }
 
 function restoreTask(value: Partial<ImageTask>): ImageTask | null {
@@ -141,6 +164,15 @@ export function loadTasks(): ImageTask[] {
   return rawTasks.map(restoreTask).filter((task): task is ImageTask => task !== null);
 }
 
+function stripPayload(task: ImageTask): ImageTask {
+  return {
+    ...task,
+    imageUrl: undefined,
+    b64Json: undefined,
+    raw: undefined,
+  };
+}
+
 function toPersistedTask(task: ImageTask): ImageTask {
   const { raw: _raw, ...persisted } = task;
 
@@ -166,8 +198,55 @@ function toPersistedTask(task: ImageTask): ImageTask {
   };
 }
 
+/**
+ * Keeps b64 recovery payloads within a fixed byte budget, newest first.
+ * Without this, a few failed cache writes can consume the whole localStorage
+ * quota and silently kill task-history persistence altogether.
+ */
+function applyB64Budget(tasks: ImageTask[]): ImageTask[] {
+  let remaining = B64_FALLBACK_BUDGET_BYTES;
+
+  // Walk newest -> oldest so the most recently generated images keep their
+  // fallback payload when the budget runs out.
+  const result = new Array<ImageTask>(tasks.length);
+
+  for (let index = tasks.length - 1; index >= 0; index -= 1) {
+    const task = tasks[index];
+
+    if (!task.b64Json) {
+      result[index] = task;
+      continue;
+    }
+
+    if (task.b64Json.length <= remaining) {
+      remaining -= task.b64Json.length;
+      result[index] = task;
+    } else {
+      result[index] = { ...task, b64Json: undefined };
+    }
+  }
+
+  return result;
+}
+
 export function saveTasks(tasks: ImageTask[]) {
-  writeJson(STORAGE_KEYS.tasks, tasks.slice(-PERSISTED_TASKS_LIMIT).map(toPersistedTask));
+  const trimmed = tasks.slice(-PERSISTED_TASKS_LIMIT).map(toPersistedTask);
+
+  if (writeJson(STORAGE_KEYS.tasks, applyB64Budget(trimmed))) {
+    return;
+  }
+
+  // Quota exceeded. Retry without any image payloads at all — keeping the task
+  // history (prompts, params, costs) matters more than the recovery fallback.
+  if (writeJson(STORAGE_KEYS.tasks, trimmed.map(stripPayload))) {
+    reportStorageIssue("taskQuotaExceeded");
+    return;
+  }
+
+  // Still failing: drop to the most recent tasks only.
+  const recent = trimmed.slice(-50).map(stripPayload);
+  writeJson(STORAGE_KEYS.tasks, recent);
+  reportStorageIssue("taskQuotaExceeded");
 }
 
 export function loadBatchPrompts(): string {

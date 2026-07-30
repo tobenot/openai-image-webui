@@ -123,6 +123,8 @@ export const resources = {
       vision: {
         title: "Understand Images",
         subtitle: "Upload images and ask a vision model to describe what they show, extract meaning, and read any text.",
+        defaultPrompt:
+          "Describe this image in detail: what is shown, what it conveys, and what the key information is. If there is any text in the image, extract it as well.",
         prompt: "Vision Prompt",
         promptPlaceholder: "Describe this image in detail: what is shown, what it means, and any text present.",
         detail: "Vision detail",
@@ -138,6 +140,19 @@ export const resources = {
           size: "{{width}}×{{height}}",
           badge: "{{count}} image(s)",
         },
+      },
+
+      storageHealth: {
+        title: "Local storage problem",
+        dismiss: "Dismiss",
+        taskQuotaExceeded:
+          "Browser storage is full, so image data was dropped from the saved history. Task records are still being saved. Clear the image cache or export what you need.",
+        settingsWriteFailed:
+          "Could not save settings. They will reset when you reload — check if your browser blocks storage for this site.",
+        imageCacheWriteFailed:
+          "Could not cache a generated image. It is still shown in this session, but will be lost after a reload. Try clearing the image cache.",
+        imageCacheEvictionFailed:
+          "Could not check the image cache size. Caching may be unreliable in this session.",
       },
 
       workspace: {
@@ -159,6 +174,7 @@ export const resources = {
         loading: "Loading...",
         empty: "No cached images yet. Generated images will appear here after caching.",
         loadMore: "Load more",
+        newImages: "{{count}} new image(s) generated — click to refresh",
         previewImage: "Preview image",
         unknownPrompt: "Untitled image",
         unknownModel: "Unknown model",
@@ -210,6 +226,7 @@ export const resources = {
           inputImages: "Input images",
           detail: "Detail",
           cost: "Est. cost",
+          costUnknown: "No pricing data for this model",
           tokens: "Tokens",
           tokensIn: "In",
           tokensOut: "Out",
@@ -474,6 +491,8 @@ export const resources = {
       vision: {
         title: "识图理解",
         subtitle: "上传图片，让视觉模型描述画面内容、提取关键信息和文字。",
+        defaultPrompt:
+          "请用中文详细描述这张图片的内容：画面中有什么、表达了什么意思、关键信息是什么。如果图中有文字，也一并提取出来。",
         prompt: "识图提示词",
         promptPlaceholder: "请用中文详细描述这张图片的内容：画面中有什么、表达了什么意思、关键信息是什么。",
         detail: "识图细节级别",
@@ -489,6 +508,19 @@ export const resources = {
           size: "{{width}}×{{height}}",
           badge: "{{count}} 张图片",
         },
+      },
+
+      storageHealth: {
+        title: "本地存储异常",
+        dismiss: "知道了",
+        taskQuotaExceeded:
+          "浏览器存储空间已满，已从保存的历史中丢弃图片数据。任务记录仍在正常保存。建议清理图片缓存或先导出需要的内容。",
+        settingsWriteFailed:
+          "设置保存失败，刷新后会恢复默认值。请检查浏览器是否禁止了本站点的存储权限。",
+        imageCacheWriteFailed:
+          "生成的图片缓存失败。本次会话仍可查看，但刷新后会丢失。建议清理图片缓存后重试。",
+        imageCacheEvictionFailed:
+          "无法读取图片缓存占用大小，本次会话的缓存可能不稳定。",
       },
 
       workspace: {
@@ -510,6 +542,7 @@ export const resources = {
         loading: "加载中...",
         empty: "还没有缓存图片。生成成功并缓存后会显示在这里。",
         loadMore: "加载更多",
+        newImages: "新生成了 {{count}} 张图片，点击刷新",
         previewImage: "预览图片",
         unknownPrompt: "未命名图片",
         unknownModel: "未知模型",
@@ -560,6 +593,7 @@ export const resources = {
           inputImages: "输入图片",
           detail: "细节级别",
           cost: "预估费用",
+          costUnknown: "暂无该模型的定价数据",
           tokens: "Token 用量",
           tokensIn: "输入",
           tokensOut: "输出",

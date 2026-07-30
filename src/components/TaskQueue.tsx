@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { ImageTask } from "../types";
 import { TaskCard } from "./TaskCard";
@@ -14,7 +15,7 @@ interface TaskQueueProps {
   onReuseParams: (task: ImageTask) => void;
 }
 
-export function TaskQueue({
+export const TaskQueue = memo(function TaskQueue({
   tasks,
   onPreview,
   onRetry,
@@ -24,15 +25,25 @@ export function TaskQueue({
   onReuseParams,
 }: TaskQueueProps) {
   const { t } = useTranslation();
-  const stats = {
-    pending: tasks.filter((task) => task.status === "pending").length,
-    running: tasks.filter((task) => task.status === "running").length,
-    success: tasks.filter((task) => task.status === "success").length,
-    error: tasks.filter((task) => task.status === "error").length,
-  };
-  const orderedTasks = [...tasks].sort((a, b) => b.createdAt - a.createdAt);
-  const visibleTasks = orderedTasks.slice(0, MAX_RENDERED_TASKS);
-  const hiddenCount = Math.max(0, orderedTasks.length - visibleTasks.length);
+
+  const { stats, visibleTasks, hiddenCount } = useMemo(() => {
+    const counts = { pending: 0, running: 0, success: 0, error: 0 };
+
+    for (const task of tasks) {
+      if (task.status in counts) {
+        counts[task.status as keyof typeof counts] += 1;
+      }
+    }
+
+    const ordered = [...tasks].sort((a, b) => b.createdAt - a.createdAt);
+    const visible = ordered.slice(0, MAX_RENDERED_TASKS);
+
+    return {
+      stats: counts,
+      visibleTasks: visible,
+      hiddenCount: Math.max(0, ordered.length - visible.length),
+    };
+  }, [tasks]);
 
   return (
     <section className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-soft backdrop-blur">
@@ -74,4 +85,4 @@ export function TaskQueue({
       )}
     </section>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { copyText, downloadImage, downloadText } from "../lib/download";
 import { formatCostUsd } from "../lib/pricing";
@@ -67,7 +67,7 @@ function formatTaskDebug(task: ImageTask, errorText: string) {
   );
 }
 
-export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClearImage, onReuseParams }: TaskCardProps) {
+export const TaskCard = memo(function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClearImage, onReuseParams }: TaskCardProps) {
   const { t } = useTranslation();
   const [messageKey, setMessageKey] = useState<string>("");
   const isVisionTask = task.mode === "vision";
@@ -276,6 +276,11 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClear
                   </span>
                 </dd>
               </div>
+            ) : task.status === "success" ? (
+              <div className="rounded-lg bg-slate-50 p-2">
+                <dt className="font-medium text-slate-500">{t("tasks.fields.cost")}</dt>
+                <dd className="mt-1 text-slate-500">{t("tasks.fields.costUnknown")}</dd>
+              </div>
             ) : null}
           </dl>
 
@@ -404,4 +409,4 @@ export function TaskCard({ task, onPreview, onRetry, onCancel, onRemove, onClear
       </div>
     </article>
   );
-}
+});

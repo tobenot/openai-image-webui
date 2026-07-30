@@ -1,4 +1,5 @@
 import type { ImageTaskDebug, VisionAnalysisParams, VisionAnalysisResult } from "../types";
+import { stripInternalParams } from "./requestShaping";
 
 const DEBUG_LOG_PREFIX_VISION = "[openai-image-webui] responses/vision";
 const MAX_DEBUG_STRING_LENGTH = 1_000;
@@ -193,7 +194,7 @@ export async function analyzeImages(params: VisionAnalysisParams): Promise<Visio
         ],
       },
     ],
-    ...extraParams,
+    ...stripInternalParams(extraParams),
   };
   const debug = createDebug(endpoint, body);
 

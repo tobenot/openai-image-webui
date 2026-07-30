@@ -95,7 +95,7 @@ export const BatchRenamePanel = memo(function BatchRenamePanel({ settings }: Bat
     const controller = new AbortController();
     abortRef.current = controller;
 
-    for (const item of pendingItems) {
+    for (const [index, item] of pendingItems.entries()) {
       if (controller.signal.aborted) break;
 
       setItems((prev) =>
@@ -112,7 +112,7 @@ export const BatchRenamePanel = memo(function BatchRenamePanel({ settings }: Bat
           namingMode,
           signal: controller.signal,
         });
-        const finalName = buildFinalName(aiName, item.originalName);
+        const finalName = buildFinalName(aiName, item.originalName, index + 1);
 
         setItems((prev) =>
           prev.map((i) =>

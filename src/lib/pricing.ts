@@ -1,9 +1,13 @@
 /**
  * Per-request cost estimation.
  *
- * Pricing data is maintained locally — users can override via settings if
- * their relay charges differently. Numbers here reflect OpenAI official
- * pricing as of 2026-05.
+ * Numbers below reflect OpenAI's official list pricing as of 2026-05 and are
+ * baked in — there is no override UI. Anything routed through a relay (or any
+ * model not listed here) will not match, so treat every figure as a rough
+ * reference, not a bill.
+ *
+ * Models with no entry report "unknown" rather than silently showing nothing,
+ * so the UI can tell "we don't know" apart from "it's free".
  */
 
 // ---------- Types ----------
@@ -103,6 +107,16 @@ function findTokenPricing(model: string): TokenPricing | undefined {
     }
   }
   return undefined;
+}
+
+/** True when we have no pricing data for this image model at all. */
+export function isImagePricingUnknown(model: string): boolean {
+  return findImagePricing(model) === undefined;
+}
+
+/** True when we have no pricing data for this token-billed model at all. */
+export function isTokenPricingUnknown(model: string): boolean {
+  return findTokenPricing(model) === undefined;
 }
 
 // ---------- Extract usage from raw API response ----------
