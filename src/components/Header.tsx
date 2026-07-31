@@ -25,7 +25,7 @@ export function Header({ taskCount, onClearTasks }: HeaderProps) {
       <div className="flex flex-wrap gap-3">
         <a
           className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
-          href="https://github.com/search?q=openai-image-webui&type=repositories"
+          href="https://github.com/tobenot/openai-image-webui"
           target="_blank"
           rel="noreferrer"
         >

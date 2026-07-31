@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, memo, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, memo, type ChangeEvent, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { GenerateFormState, InputImageFile } from "../types";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../lib/imageInput";
 import { getModelSizingProfile, getSizePresetGroupsForModel } from "../lib/imageSizing";
 import { Notice } from "./Notice";
+import { ImageDropzone } from "./ImageDropzone";
 
 const SIZE_STEP = 64;
 const MIN_SIZE = 256;
@@ -136,7 +137,6 @@ export const GenerationPanel = memo(function GenerationPanel({ form, error, mode
   const [sliderHeight, setSliderHeight] = useState(initialParsedSize?.height ?? DEFAULT_SIZE);
   const [recentSizes, setRecentSizes] = useState<string[]>(() => loadRecentSizes());
   const [inputImageError, setInputImageError] = useState("");
-  const imageFileInputRef = useRef<HTMLInputElement>(null);
   const maskFileInputRef = useRef<HTMLInputElement>(null);
 
   const strictPng = modelRequiresStrictPng(model ?? "");
@@ -277,31 +277,12 @@ export const GenerationPanel = memo(function GenerationPanel({ form, error, mode
     onChange({ maskImage: null });
   }
 
-  function onImageInputChange(event: ChangeEvent<HTMLInputElement>) {
-    if (event.target.files && event.target.files.length > 0) {
-      void handleAddInputImages(event.target.files);
-    }
-    event.target.value = "";
-  }
-
   function onMaskInputChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (file) {
       void handleAddMask(file);
     }
     event.target.value = "";
-  }
-
-  function onDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const files = event.dataTransfer?.files;
-    if (files && files.length > 0) {
-      void handleAddInputImages(files);
-    }
-  }
-
-  function onDragOver(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
   }
 
   const acceptMime = strictPng ? "image/png" : "image/png,image/jpeg,image/webp";
@@ -328,65 +309,20 @@ export const GenerationPanel = memo(function GenerationPanel({ form, error, mode
           />
         </label>
 
-        <div
-          className={`rounded-xl border p-3 transition ${
-            isEditMode
-              ? "border-emerald-300 bg-emerald-50/60"
-              : "border-slate-200 bg-slate-50/70"
-          }`}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
+        <ImageDropzone
+          images={form.inputImages}
+          onAdd={handleAddInputImages}
+          onRemove={removeInputImage}
+          title={t("generation.inputImages.title")}
+          hint={t("generation.inputImages.hint")}
+          addButtonLabel={t("generation.inputImages.addButton")}
+          removeLabel={t("generation.inputImages.remove")}
+          accept={acceptMime}
+          badge={isEditMode ? t("generation.inputImages.editModeBadge") : undefined}
+          warning={showMultiImageWarning ? t("generation.inputImages.multipleImagesWarning") : undefined}
+          error={inputImageError || undefined}
+          sizeLabel={(width, height) => t("generation.inputImages.size", { width, height })}
         >
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-600">
-              {t("generation.inputImages.title")}
-            </p>
-            {isEditMode ? (
-              <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[11px] font-semibold text-white">
-                {t("generation.inputImages.editModeBadge")}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-xs text-slate-500">{t("generation.inputImages.hint")}</p>
-
-          <div className="mt-2 flex flex-wrap gap-2">
-            {form.inputImages.map((item) => (
-              <div
-                key={item.id}
-                className="group relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-white"
-                title={`${item.file.name} · ${item.width}×${item.height}`}
-              >
-                <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  className="absolute right-0 top-0 rounded-bl-lg bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
-                  onClick={() => removeInputImage(item.id)}
-                >
-                  {t("generation.inputImages.remove")}
-                </button>
-                <span className="absolute bottom-0 left-0 right-0 bg-slate-900/70 px-1 py-0.5 text-center text-[10px] text-white">
-                  {t("generation.inputImages.size", { width: item.width, height: item.height })}
-                </span>
-              </div>
-            ))}
-
-            <button
-              type="button"
-              className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-xs font-medium text-slate-500 transition hover:border-sky-400 hover:text-sky-600"
-              onClick={() => imageFileInputRef.current?.click()}
-            >
-              + {t("generation.inputImages.addButton")}
-            </button>
-            <input
-              ref={imageFileInputRef}
-              type="file"
-              accept={acceptMime}
-              multiple
-              hidden
-              onChange={onImageInputChange}
-            />
-          </div>
-
           {isEditMode ? (
             <div className="mt-3">
               <p className="text-xs font-medium text-slate-600">{t("generation.inputImages.mask")}</p>
@@ -431,17 +367,7 @@ export const GenerationPanel = memo(function GenerationPanel({ form, error, mode
               </div>
             </div>
           ) : null}
-
-          {showMultiImageWarning ? (
-            <p className="mt-2 text-xs text-amber-700">
-              {t("generation.inputImages.multipleImagesWarning")}
-            </p>
-          ) : null}
-
-          {inputImageError ? (
-            <p className="mt-2 text-xs text-rose-600">{inputImageError}</p>
-          ) : null}
-        </div>
+        </ImageDropzone>
 
         {/* Image count */}
         <label className="block">
@@ -519,15 +445,6 @@ export const GenerationPanel = memo(function GenerationPanel({ form, error, mode
             </label>
           </div>
 
-          {/* Text fallback — same as before but smaller, for pasting arbitrary "WxH" */}
-          <input
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-            placeholder={t("generation.sizePlaceholder")}
-            value={form.size}
-            onChange={(event) => onChange({ size: event.target.value })}
-            onBlur={() => applySize(form.size)}
-          />
-
           {/* Sliders */}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-xs text-slate-600">
@@ -595,69 +512,77 @@ export const GenerationPanel = memo(function GenerationPanel({ form, error, mode
           ) : null}
         </div>
 
-        {/* Common sizes grouped by aspect ratio */}
+        {/* More size options: raw "WxH" input, common sizes by ratio, recent sizes */}
         <details className="group rounded-xl border border-slate-200 bg-slate-50/70 p-3 outline-none [&_summary::-webkit-details-marker]:hidden">
           <summary className="cursor-pointer text-xs font-medium text-slate-600 select-none flex items-center justify-between list-none focus:outline-none">
-            <span>{t("generation.commonSizes")}</span>
+            <span>{t("generation.sizeMoreOptions")}</span>
             <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▼</span>
           </summary>
-          <div className="mt-2.5">
-            <p className="text-xs text-slate-500 mb-2">{t("generation.commonSizesHint")}</p>
-            <div className="space-y-2">
-              {sizePresetGroups.map((group) => (
-                <div key={group.ratio}>
-                  <p className="mb-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                    {group.ratio}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {group.sizes.map((size) => (
-                      <button
-                        key={size}
-                        type="button"
-                        className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
-                          isSizeActive(size)
-                            ? "border-emerald-400 bg-emerald-50 text-emerald-700"
-                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                        }`}
-                        onClick={() => applySize(size)}
-                      >
-                        {size}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </details>
+          <div className="mt-2.5 space-y-3">
+            {/* Text fallback — for pasting arbitrary "WxH" */}
+            <input
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+              placeholder={t("generation.sizePlaceholder")}
+              value={form.size}
+              onChange={(event) => onChange({ size: event.target.value })}
+              onBlur={() => applySize(form.size)}
+            />
 
-        {/* Recent sizes */}
-        <details className="group rounded-xl border border-slate-200 bg-slate-50/70 p-3 outline-none [&_summary::-webkit-details-marker]:hidden">
-          <summary className="cursor-pointer text-xs font-medium text-slate-600 select-none flex items-center justify-between list-none focus:outline-none">
-            <span>{t("generation.recentSizes")}</span>
-            <span className="text-[10px] text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-          </summary>
-          <div className="mt-2.5">
-            {recentSizes.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {recentSizes.map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                      isSizeActive(size)
-                        ? "border-amber-400 bg-amber-50 text-amber-700"
-                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
-                    onClick={() => applySize(size)}
-                  >
-                    {size}
-                  </button>
+            {/* Common sizes grouped by aspect ratio */}
+            <div>
+              <p className="text-xs font-medium text-slate-600">{t("generation.commonSizes")}</p>
+              <p className="mt-1 text-xs text-slate-500 mb-2">{t("generation.commonSizesHint")}</p>
+              <div className="space-y-2">
+                {sizePresetGroups.map((group) => (
+                  <div key={group.ratio}>
+                    <p className="mb-1 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                      {group.ratio}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.sizes.map((size) => (
+                        <button
+                          key={size}
+                          type="button"
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                            isSizeActive(size)
+                              ? "border-emerald-400 bg-emerald-50 text-emerald-700"
+                              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                          }`}
+                          onClick={() => applySize(size)}
+                        >
+                          {size}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-xs text-slate-500">{t("generation.recentSizesEmpty")}</p>
-            )}
+            </div>
+
+            {/* Recent sizes */}
+            <div>
+              <p className="text-xs font-medium text-slate-600 mb-2">{t("generation.recentSizes")}</p>
+              {recentSizes.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {recentSizes.map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                        isSizeActive(size)
+                          ? "border-amber-400 bg-amber-50 text-amber-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                      onClick={() => applySize(size)}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">{t("generation.recentSizesEmpty")}</p>
+              )}
+            </div>
           </div>
         </details>
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { GenerationPanel } from "./components/GenerationPanel";
 import { Header } from "./components/Header";
@@ -17,10 +17,11 @@ import { useImageTasks } from "./hooks/useImageTasks";
 import { useSettings } from "./hooks/useSettings";
 import { toFriendlyError } from "./lib/errors";
 import { parseAdvancedJson } from "./lib/parseAdvancedJson";
+import { stripGeminiSizeArtifacts } from "./lib/imageSizing";
 import { DEFAULT_BATCH_FORM, DEFAULT_FORM, DEFAULT_VISION_FORM, loadBatchPrompts, saveBatchPrompts } from "./lib/storage";
 import { toInputImageFile } from "./lib/imageInput";
 import { createBatchId, parsePromptList } from "./lib/promptList";
-import { downloadBatchZip } from "./lib/batchExport";
+import { downloadBatchZip, getTaskBatchId } from "./lib/batchExport";
 import type { AppSettings, BatchFormState, GenerateFormState, ImageTask, InputImageFile, ReuseParamsPayload, VisionFormState } from "./types";
 
 
@@ -95,6 +96,46 @@ function validateVisionRequest(
 type WorkspacePanel = "tasks" | "library";
 type WorkspaceMode = "generate" | "vision" | "rename" | "batch";
 
+const MODE_ICONS: Record<WorkspaceMode, ReactNode> = {
+  generate: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0">
+      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+      <path d="M19 15l.7 1.8L21.5 17.5l-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7L19 15z" />
+    </svg>
+  ),
+  vision: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+  batch: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  ),
+  rename: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </svg>
+  ),
+};
+
+/** Build an {@link InputImageFile} from a File with a fresh object URL. */
+function makeInputImageFile(file: File, width = 0, height = 0): InputImageFile {
+  return {
+    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    file,
+    previewUrl: URL.createObjectURL(file),
+    width,
+    height,
+  };
+}
+
 export default function App() {
   const { i18n, t } = useTranslation();
   const { settings, setSettings, resetSettings } = useSettings();
@@ -153,6 +194,10 @@ export default function App() {
 
   const closePreview = useCallback(() => setPreviewUrl(null), []);
 
+  const activeTaskCount = tasks.filter(
+    (task) => task.status === "pending" || task.status === "running",
+  ).length;
+
   // Auto-dismiss toast after 3 seconds
   useEffect(() => {
     if (!toast) return;
@@ -189,7 +234,27 @@ export default function App() {
     });
   }, []);
 
-  const handleReuseParams = useCallback((payload: ReuseParamsPayload) => {
+const handleReuseParams = useCallback((payload: ReuseParamsPayload) => {
+    // Gemini models store auto-derived aspect_ratio / image_size in
+    // extraParams and an auto-appended "--ar X:Y" in the prompt. Restoring
+    // them verbatim locks the size — subsequent form.size changes get
+    // ignored by buildCompatibleImageRequest (the "改尺寸都无效" bug). Strip
+    // them here so form.size stays the single source of truth. No-op for
+    // non-Gemini models.
+    const { prompt: cleanPrompt, extraParams: cleanExtra } = stripGeminiSizeArtifacts(
+      payload.model,
+      payload.prompt,
+      payload.size,
+      payload.extraParams,
+    );
+
+    console.log("[reuseParams] handleReuseParams", {
+      model: payload.model,
+      inputImageCount: payload.inputImages?.length ?? 0,
+      hasMask: !!payload.maskImage,
+      inputImagesLost: payload.inputImagesLost,
+      strippedGeminiArtifacts: cleanPrompt !== payload.prompt || cleanExtra !== payload.extraParams,
+    });
 
     // Update settings (model + responseFormat)
     setSettings({
@@ -197,7 +262,7 @@ export default function App() {
       responseFormat: payload.responseFormat,
     });
 
-    // Update form (prompt + size + advancedJson + inputImages + maskImage).
+// Update form (prompt + size + advancedJson + inputImages + maskImage).
     // The functional form lets us revoke the object URLs of the images we are
     // replacing — otherwise repeated "reuse params" leaks a blob every time.
     setForm((current) => {
@@ -220,20 +285,23 @@ export default function App() {
       }
 
       return {
-        prompt: payload.prompt,
+        prompt: cleanPrompt,
         count: 1,
         size: payload.size,
-        advancedJson: payload.extraParams && Object.keys(payload.extraParams).length > 0
-          ? JSON.stringify(payload.extraParams, null, 2)
+        advancedJson: cleanExtra && Object.keys(cleanExtra).length > 0
+          ? JSON.stringify(cleanExtra, null, 2)
           : "",
         inputImages: nextImages,
         maskImage: nextMask,
       };
     });
 
-    // Switch to tasks panel so the user can see the form
+    // Switch back to the generate workspace so the applied params are
+    // actually visible — the form lives behind the mode switch.
+    setActiveMode("generate");
     setActivePanel("tasks");
     setFormError("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
 
     // Show toast
     if (payload.inputImagesLost) {
@@ -254,8 +322,36 @@ export default function App() {
     const isEdit = task.mode === "edit";
     const hasInputs = isEdit && pending && pending.images.length > 0;
 
-    // If the task was an edit but inputs are gone, mark them as lost
-    const inputImagesLost = isEdit && !hasInputs;
+    // The generate and batch forms both keep their inputImages after a
+    // successful submit (so the user can tweak & re-submit). The in-memory
+    // File blobs held in pendingInputs are released once the task succeeds,
+    // so when reusing an edit task whose blobs are gone, fall back to the
+    // form that originally supplied the images before declaring them "lost".
+    // Batch tasks were created from the batch form; single edits from the
+    // generate form. In the common "just uploaded, just generated, now
+    // reuse" flow the images are still right there - no reason to tell the
+    // user they're gone.
+    const isBatchTask = !!getTaskBatchId(task);
+    const fallbackSource = isBatchTask ? batchForm.inputImages : form.inputImages;
+    const fallbackAvailable = isEdit && !hasInputs && fallbackSource.length > 0;
+
+    // Only truly lost when there are neither in-memory inputs nor a form
+    // fallback.
+    const inputImagesLost = isEdit && !hasInputs && !fallbackAvailable;
+
+    console.log("[reuseParams] buildReusePayloadFromTask", {
+      taskId: task.id,
+      taskMode: task.mode,
+      taskStatus: task.status,
+      hasPendingInputs: !!pending,
+      pendingImageCount: pending?.images.length ?? 0,
+      isBatchTask,
+      fallbackImageCount: fallbackSource.length,
+      hasFormMask: !!form.maskImage,
+      hasInputs,
+      fallbackAvailable,
+      inputImagesLost,
+    });
 
     let inputImages: InputImageFile[] | undefined;
     let maskImage: InputImageFile | null | undefined;
@@ -263,6 +359,24 @@ export default function App() {
     if (hasInputs && pending) {
       inputImages = await Promise.all(pending.images.map((file: File) => toInputImageFile(file)));
       maskImage = pending.mask ? await toInputImageFile(pending.mask) : null;
+    } else if (fallbackAvailable) {
+      if (isBatchTask) {
+        // The batch form's images are about to move into the generate form.
+        // Clone them with fresh object URLs so they don't share previewUrl
+        // lifetime with the batch form - revoking one when removed from the
+        // generate form must not break the batch form's copy.
+        inputImages = fallbackSource.map((item) =>
+          makeInputImageFile(item.file, item.width, item.height),
+        );
+        maskImage = null; // batch tasks never carry a mask
+      } else {
+        // Reuse the generate form's existing InputImageFile entries as-is -
+        // their previewUrls are already valid, and they stay in the same
+        // form, so no need to mint new object URLs (which would also leak
+        // the old ones).
+        inputImages = form.inputImages;
+        maskImage = form.maskImage;
+      }
     }
 
     return {
@@ -429,25 +543,34 @@ export default function App() {
           <aside className="lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-2 space-y-6">
             <SettingsPanel settings={settings} onChange={setSettings} onReset={resetSettings} />
 
-            {/* Workspace Mode Selection (Tabs) */}
-            <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
-              <div className="grid grid-cols-4 gap-1">
-                {(["generate", "vision", "batch", "rename"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={`rounded-xl px-2 py-2 text-xs font-semibold transition truncate ${
-                      activeMode === mode
-                        ? "bg-slate-950 text-white shadow-sm"
-                        : "text-slate-500 hover:bg-white hover:text-slate-900"
-                    }`}
-                    onClick={() => setActiveMode(mode)}
-                  >
+            {/* Workspace Mode Selection */}
+            <nav aria-label={t("workspace.modes.generate")} className="grid grid-cols-2 gap-2">
+              {(["generate", "vision", "batch", "rename"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  aria-pressed={activeMode === mode}
+                  className={`rounded-2xl border p-3 text-left transition ${
+                    activeMode === mode
+                      ? "border-slate-950 bg-slate-950 text-white shadow-soft"
+                      : "border-white/70 bg-white/75 text-slate-600 backdrop-blur hover:border-slate-300 hover:bg-white hover:text-slate-900"
+                  }`}
+                  onClick={() => setActiveMode(mode)}
+                >
+                  <span className="flex items-center gap-1.5 text-sm font-semibold">
+                    {MODE_ICONS[mode]}
                     {t(`workspace.modes.${mode}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
+                  </span>
+                  <span
+                    className={`mt-1 block text-[11px] leading-4 ${
+                      activeMode === mode ? "text-slate-300" : "text-slate-400"
+                    }`}
+                  >
+                    {t(`workspace.modeDescriptions.${mode}`)}
+                  </span>
+                </button>
+              ))}
+            </nav>
 
             {/* Active Input Panel */}
             {activeMode === "generate" ? (
@@ -479,20 +602,35 @@ export default function App() {
             {/* Viewport Select Tab (Tasks vs Library) */}
             <div className="rounded-2xl border border-white/70 bg-white/75 p-1 shadow-sm backdrop-blur">
               <div className="grid grid-cols-2 gap-1">
-                {(["tasks", "library"] as const).map((panel) => (
-                  <button
-                    key={panel}
-                    type="button"
-                    className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                      activePanel === panel
-                        ? "bg-slate-950 text-white shadow-sm"
-                        : "text-slate-500 hover:bg-white hover:text-slate-900"
-                    }`}
-                    onClick={() => setActivePanel(panel)}
-                  >
-                    {t(`workspace.tabs.${panel}`)}
-                  </button>
-                ))}
+                {(["tasks", "library"] as const).map((panel) => {
+                  const badge = panel === "tasks" ? activeTaskCount : cacheStats.count;
+                  return (
+                    <button
+                      key={panel}
+                      type="button"
+                      aria-pressed={activePanel === panel}
+                      className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                        activePanel === panel
+                          ? "bg-slate-950 text-white shadow-sm"
+                          : "text-slate-500 hover:bg-white hover:text-slate-900"
+                      }`}
+                      onClick={() => setActivePanel(panel)}
+                    >
+                      {t(`workspace.tabs.${panel}`)}
+                      {badge > 0 ? (
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${
+                            activePanel === panel
+                              ? "bg-white/20 text-white"
+                              : "bg-slate-200 text-slate-600"
+                          }`}
+                        >
+                          {badge}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

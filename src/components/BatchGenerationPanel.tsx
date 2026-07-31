@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, memo, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { useMemo, useRef, useState, memo, type ChangeEvent, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { BatchFormState, ImageTask, InputImageFile } from "../types";
 import {
@@ -10,6 +10,7 @@ import {
 import { parsePromptList, readPromptListFile } from "../lib/promptList";
 import { batchProgress, tasksOfBatch } from "../lib/batchExport";
 import { Notice } from "./Notice";
+import { ImageDropzone } from "./ImageDropzone";
 
 interface BatchGenerationPanelProps {
   form: BatchFormState;
@@ -41,7 +42,6 @@ export const BatchGenerationPanel = memo(function BatchGenerationPanel({
 }: BatchGenerationPanelProps) {
   const { t } = useTranslation();
   const [inputImageError, setInputImageError] = useState("");
-  const imageFileInputRef = useRef<HTMLInputElement>(null);
   const promptFileInputRef = useRef<HTMLInputElement>(null);
 
   const strictPng = modelRequiresStrictPng(model ?? "");
@@ -102,25 +102,6 @@ export const BatchGenerationPanel = memo(function BatchGenerationPanel({
       return true;
     });
     onChange({ inputImages: next });
-  }
-
-  function onImageInputChange(event: ChangeEvent<HTMLInputElement>) {
-    if (event.target.files && event.target.files.length > 0) {
-      void handleAddInputImages(event.target.files);
-    }
-    event.target.value = "";
-  }
-
-  function onDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const files = event.dataTransfer?.files;
-    if (files && files.length > 0) {
-      void handleAddInputImages(files);
-    }
-  }
-
-  function onDragOver(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
   }
 
   async function handlePromptFileImport(event: ChangeEvent<HTMLInputElement>) {
@@ -195,65 +176,19 @@ export const BatchGenerationPanel = memo(function BatchGenerationPanel({
         </div>
 
         {/* Shared reference images (optional) */}
-        <div
-          className={`rounded-xl border p-3 transition ${
-            isEditMode ? "border-emerald-300 bg-emerald-50/60" : "border-slate-200 bg-slate-50/70"
-          }`}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-        >
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-slate-600">{t("batch.inputImages.title")}</p>
-            {isEditMode ? (
-              <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[11px] font-semibold text-white">
-                {t("batch.inputImages.editModeBadge")}
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-xs text-slate-500">{t("batch.inputImages.hint")}</p>
-
-          <div className="mt-2 flex flex-wrap gap-2">
-            {form.inputImages.map((item) => (
-              <div
-                key={item.id}
-                className="group relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-white"
-                title={`${item.file.name} · ${item.width}×${item.height}`}
-              >
-                <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  className="absolute right-0 top-0 rounded-bl-lg bg-slate-900/70 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100"
-                  onClick={() => removeInputImage(item.id)}
-                >
-                  {t("batch.inputImages.remove")}
-                </button>
-                <span className="absolute bottom-0 left-0 right-0 bg-slate-900/70 px-1 py-0.5 text-center text-[10px] text-white">
-                  {item.width}×{item.height}
-                </span>
-              </div>
-            ))}
-            <button
-              type="button"
-              className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white text-xs font-medium text-slate-500 transition hover:border-sky-400 hover:text-sky-600"
-              onClick={() => imageFileInputRef.current?.click()}
-            >
-              + {t("batch.inputImages.addButton")}
-            </button>
-            <input
-              ref={imageFileInputRef}
-              type="file"
-              accept={acceptMime}
-              multiple
-              hidden
-              onChange={onImageInputChange}
-            />
-          </div>
-
-          {showMultiImageWarning ? (
-            <p className="mt-2 text-xs text-amber-700">{t("batch.inputImages.multipleImagesWarning")}</p>
-          ) : null}
-          {inputImageError ? <p className="mt-2 text-xs text-rose-600">{inputImageError}</p> : null}
-        </div>
+        <ImageDropzone
+          images={form.inputImages}
+          onAdd={handleAddInputImages}
+          onRemove={removeInputImage}
+          title={t("batch.inputImages.title")}
+          hint={t("batch.inputImages.hint")}
+          addButtonLabel={t("batch.inputImages.addButton")}
+          removeLabel={t("batch.inputImages.remove")}
+          accept={acceptMime}
+          badge={isEditMode ? t("batch.inputImages.editModeBadge") : undefined}
+          warning={showMultiImageWarning ? t("batch.inputImages.multipleImagesWarning") : undefined}
+          error={inputImageError || undefined}
+        />
 
         {/* Size + count + advanced */}
         <div className="grid gap-3 sm:grid-cols-2">

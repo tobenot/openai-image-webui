@@ -78,6 +78,8 @@ Presets only fill the base URL, default models, and response format. You still n
 
 For a full list of OpenAI Images API parameters that can be used with this app (including ones not exposed in the UI, passed via the Advanced JSON field), see [`docs/api-features.md`](./docs/api-features.md).
 
+For a project overview aimed at non-technical readers and reviewers, see [`docs/project-resource-guide.md`](./docs/project-resource-guide.md).
+
 ## Why direct fetch instead of the OpenAI SDK?
 
 The official OpenAI JavaScript SDK can target browsers only when `dangerouslyAllowBrowser: true` is set, because browser-side usage can expose API credentials. This project is already a pure frontend BYOK tool, so it uses a small direct `fetch` wrapper against the OpenAI-compatible REST endpoint. That keeps the bundle smaller, avoids SDK-specific browser warnings, and works with custom base URLs such as relay providers.

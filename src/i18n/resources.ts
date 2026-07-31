@@ -30,6 +30,8 @@ export const resources = {
         title: "API Settings",
         subtitle: "Bring your own endpoint and key.",
         reset: "Reset",
+        edit: "Edit",
+        fold: "Fold",
         providerPresets: "Provider Presets",
         presetsNote:
           "Presets only fill the base URL, model, and response format. You still need to use your own API key.",
@@ -89,6 +91,7 @@ export const resources = {
           geminiAspect: "Nano Banana / Gemini mode: the closest supported aspect ratio is sent as aspect_ratio and appended to the prompt as --ar for fallback; size is kept for OpenAI-compatible relays.",
         },
         commonSizes: "Compatible sizes",
+        sizeMoreOptions: "More size options",
         commonSizesHint: "Grouped by aspect ratio. For model-specific APIs, submission may normalize to the nearest supported option.",
         recentSizes: "Recent sizes",
         recentSizesEmpty: "No recent sizes yet. Pick a preset or enter one manually.",
@@ -166,6 +169,12 @@ export const resources = {
           vision: "Vision",
           batch: "Batch",
           rename: "Batch Rename",
+        },
+        modeDescriptions: {
+          generate: "Create images from a prompt",
+          vision: "Ask questions about images",
+          batch: "Run many prompts at once",
+          rename: "AI-rename local image files",
         },
       },
       library: {
@@ -253,6 +262,7 @@ export const resources = {
           retry: "Retry",
           cancel: "Cancel",
           delete: "Delete",
+          more: "More",
         },
         cache: {
           title: "Image cache",
@@ -400,6 +410,8 @@ export const resources = {
         title: "API 设置",
         subtitle: "填写你自己的接口地址和密钥。",
         reset: "重置",
+        edit: "编辑",
+        fold: "收起",
         providerPresets: "服务商预设",
         presetsNote: "预设只会填充 Base URL、模型和响应格式，你仍然需要使用自己的 API Key。",
         apiBaseUrl: "API Base URL",
@@ -457,6 +469,7 @@ export const resources = {
           geminiAspect: "Nano Banana / Gemini 模式：提交时会发送最接近的 aspect_ratio，并在提示词末尾追加 --ar 保底；同时保留 size 以兼容 OpenAI 中转。",
         },
         commonSizes: "兼容尺寸",
+        sizeMoreOptions: "更多尺寸选项",
         commonSizesHint: "按比例分组；模型有固定规则时，提交会自动规范到最近的支持项。",
         recentSizes: "最近使用",
 
@@ -534,6 +547,12 @@ export const resources = {
           vision: "识图",
           batch: "批量",
           rename: "批量重命名",
+        },
+        modeDescriptions: {
+          generate: "输入提示词生成图片",
+          vision: "上传图片并向模型提问",
+          batch: "一次提交多条提示词",
+          rename: "用 AI 批量重命名本地图片",
         },
       },
       library: {
@@ -620,6 +639,7 @@ export const resources = {
           retry: "重试",
           cancel: "取消",
           delete: "删除",
+          more: "更多",
         },
         cache: {
           title: "图片缓存",
