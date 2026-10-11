@@ -33,10 +33,12 @@ Bring your own API key and endpoint.
 
 ## Quick Start
 
+Use Node.js **22.x** and npm, then restore the committed lockfile with `npm ci`. The locked Vite 6.4.2 accepts Node 22; the existing Pages workflow currently selects Node 20. No project backend or API key is needed merely to build the frontend.
+
 ```bash
 git clone https://github.com/tobenot/openai-image-webui.git
 cd openai-image-webui
-npm install
+npm ci
 npm run dev
 ```
 
@@ -47,6 +49,10 @@ npm run build
 ```
 
 ## Deploy to GitHub Pages
+
+Deployment is separate from a local build. The existing `.github/workflows/deploy-pages.yml` publishes on pushes to `main` or manual dispatch. `npm run deploy` builds and pushes `dist` through `gh-pages`; do not use either path merely to verify a checkout.
+
+The tracked `public/` icons, manifest, service worker and `CNAME` are build/deployment inputs. The current `base: "/"` configuration matches the custom-domain layout; a repository-subpath deployment needs an explicit base-path decision instead of reusing that layout unchanged.
 
 ```bash
 npm run deploy
@@ -136,6 +142,12 @@ or:
   ]
 }
 ```
+
+## Source recovery and browser data
+
+A fresh clone restores application code and tracked public assets, not browser settings or generated-image history. Settings/task metadata live in localStorage, while image blobs are cached in IndexedDB. A different machine or browser profile does not inherit those stores; download or ZIP-export images you want to keep before leaving the old environment. Provider URLs may also expire independently of the source repository.
+
+Private API keys remain user runtime inputs, never build inputs. No server-side database backup is required for this pure frontend, but source restoration alone does not recover the user's image library.
 
 ## Security Notice
 
